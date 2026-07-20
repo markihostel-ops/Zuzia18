@@ -55,19 +55,25 @@ if view_mode == "Wgraj Zdjęcie (Goście)":
 
         if uploaded_files:
             if st.button("🚀 Wyślij zdjęcia do pokazu"):
-                with st.spinner("Wysyłam i generuję podpisy AI..."):
+                with st.spinner("Wysyłam zdjęcia na telebim..."):
                     model = genai.GenerativeModel("gemini-2.0-flash")
                     for uploaded_file in uploaded_files:
                         try:
+                            # 1. Zawsze wysyłamy zdjęcie do Cloudinary
                             upload_result = cloudinary.uploader.upload(uploaded_file)
                             image_url = upload_result.get("secure_url")
 
-                            image_bytes = uploaded_file.getvalue()
-                            image_obj = Image.open(BytesIO(image_bytes))
-
-                            prompt = "Wymyśl krótki, zabawny, imprezowy podpis w języku polskim do tego zdjęcia na 18. urodziny Zuzi. Maksymalnie 1 zdanie z emoji."
-                            response = model.generate_content([prompt, image_obj])
-                            caption = response.text.strip() if response and response.text else "Sto lat Zuzia! 🎉"
+                            # 2. Próbujemy wygenerować podpis przez AI, ale jak jest limit (429), to aplikacja się nie wywala
+                            caption = "Sto lat Zuzia! 🎉"
+                            try:
+                                image_bytes = uploaded_file.getvalue()
+                                image_obj = Image.open(BytesIO(image_bytes))
+                                prompt = "Wymyśl krótki, zabawny, imprezowy podpis w języku polskim do tego zdjęcia na 18. urodziny Zuzi. Maksymalnie 1 zdanie z emoji."
+                                response = model.generate_content([prompt, image_obj])
+                                if response and response.text:
+                                    caption = response.text.strip()
+                            except Exception:
+                                pass # Jeśli limit AI jest przekroczony, używamy domyślnego podpisu bez błędu dla użytkownika
 
                             st.session_state.active_items.append({"url": image_url, "caption": caption})
                         except Exception as e:
