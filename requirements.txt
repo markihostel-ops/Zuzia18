@@ -2,4 +2,6 @@ streamlit
 google-generativeai
 cloudinary
 pillow
+filelock
+streamlit-autorefresh
 requests
