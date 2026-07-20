@@ -56,7 +56,7 @@ if view_mode == "Wgraj Zdjęcie (Goście)":
         if uploaded_files:
             if st.button("🚀 Wyślij zdjęcia do pokazu"):
                 with st.spinner("Wysyłam i generuję podpisy AI..."):
-                    model = genai.GenerativeModel("gemini-2.5-flash")
+                    model = genai.GenerativeModel("gemini-2.0-flash")
                     for uploaded_file in uploaded_files:
                         try:
                             upload_result = cloudinary.uploader.upload(uploaded_file)
