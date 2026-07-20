@@ -1,8 +1,8 @@
 import streamlit as st
+import time
 
 st.set_page_config(page_title="18. Urodziny Zuzi - Foto Pokaz", layout="wide")
 
-# Automatyczne pobieranie kluczy z pliku secrets.toml (bez wpisywania ręcznego)
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 CLOUDINARY_CLOUD_NAME = st.secrets.get("CLOUDINARY_CLOUD_NAME", "")
 CLOUDINARY_API_KEY = st.secrets.get("CLOUDINARY_API_KEY", "")
@@ -12,13 +12,9 @@ import google.generativeai as genai
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-from PIL import Image, ImageFilter
-import requests
+from PIL import Image
 from io import BytesIO
-import time
-from concurrent.futures import ThreadPoolExecutor
 
-# Konfiguracja Cloudinary i Gemini w tle
 if CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
     cloudinary.config(
         cloud_name=CLOUDINARY_CLOUD_NAME,
@@ -29,7 +25,6 @@ if CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# Panel boczny (pola są wypełniane automatycznie ukrytymi wartościami z secrets)
 st.sidebar.title("Panel Konfiguracji & DJ")
 st.sidebar.text_input("Gemini API Key", value=GEMINI_API_KEY, type="password")
 st.sidebar.text_input("Cloudinary Cloud Name", value=CLOUDINARY_CLOUD_NAME)
@@ -43,41 +38,62 @@ view_mode = st.sidebar.radio(
     label_visibility="collapsed"
 )
 
-if "comments" not in st.session_state:
-    st.session_state.comments = {}
+if "active_items" not in st.session_state:
+    st.session_state.active_items = []
 
 if "current_index" not in st.session_state:
     st.session_state.current_index = 0
 
-# Główna logika aplikacji
 if view_mode == "Wgraj Zdjęcie (Goście)":
     st.title("🎂 18. Urodziny Zuzi")
-    st.header("Wrzuć fotkę na żywo na ekran projektora!")
+    st.header("Wrzuć fotki na żywo na ekran projektora!")
 
     if not CLOUDINARY_CLOUD_NAME or not GEMINI_API_KEY:
-        st.error("Uzupełnij dane Cloudinary w panelu bocznym lub pliku secrets!")
+        st.error("Uzupełnij dane Cloudinary lub Gemini!")
     else:
-        uploaded_file = st.file_uploader("Wybierz zdjęcie z telefonu:", type=["jpg", "jpeg", "png"])
-        if uploaded_file is not None:
-            if st.button("🚀 Wyślij zdjęcie do pokazu"):
-                with st.spinner("Wysyłam na telebim..."):
-                    try:
-                        upload_result = cloudinary.uploader.upload(uploaded_file)
-                        image_url = upload_result.get("secure_url")
+        uploaded_files = st.file_uploader("Wybierz zdjęcia z telefonu:", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
-                        # Zapisujemy w sesji (jeśli masz listę zdjęć)
-                        if "active_urls" not in st.session_state:
-                            st.session_state.active_urls = []
-                        st.session_state.active_urls.append(image_url)
+        if uploaded_files:
+            if st.button("🚀 Wyślij zdjęcia do pokazu"):
+                with st.spinner("Wysyłam i generuję podpisy AI..."):
+                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    for uploaded_file in uploaded_files:
+                        try:
+                            upload_result = cloudinary.uploader.upload(uploaded_file)
+                            image_url = upload_result.get("secure_url")
 
-                        st.success("Zdjęcie zostało wysłane na pokaz! 🎉")
-                    except Exception as e:
-                        st.error(f"Błąd wysyłania: {e}")
+                            image_bytes = uploaded_file.getvalue()
+                            image_obj = Image.open(BytesIO(image_bytes))
+
+                            prompt = "Wymyśl krótki, zabawny, imprezowy podpis w języku polskim do tego zdjęcia na 18. urodziny Zuzi. Maksymalnie 1 zdanie z emoji."
+                            response = model.generate_content([prompt, image_obj])
+                            caption = response.text.strip() if response and response.text else "Sto lat Zuzia! 🎉"
+
+                            st.session_state.active_items.append({"url": image_url, "caption": caption})
+                        except Exception as e:
+                            st.error(f"Błąd przy pliku: {e}")
+
+                    st.success("Wszystkie zdjęcia zostały wysłane! 🎉")
 
 else:
     st.title("🎬 Ekran Projektora / Pokaz")
-    if "active_urls" in st.session_state and st.session_state.active_urls:
-        idx = st.session_state.current_index % len(st.session_state.active_urls)
-        st.image(st.session_state.active_urls[idx], use_container_width=True)
+
+    # Kontrola slajdów dla DJ-a w panelu bocznym
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🎛️ Kontrola Slajdów")
+    pause_show = st.sidebar.checkbox("Pauza pokazu")
+
+    if st.session_state.active_items:
+        if not pause_show:
+            # Automatyczna zmiana co 7 sekund
+            time.sleep(7)
+            st.session_state.current_index = (st.session_state.current_index + 1) % len(st.session_state.active_items)
+            st.rerun()
+
+        idx = st.session_state.current_index % len(st.session_state.active_items)
+        item = st.session_state.active_items[idx]
+
+        st.image(item["url"], use_container_width=True)
+        st.markdown(f"<h2 style='text-align: center; color: #ff4b4b;'>{item['caption']}</h2>", unsafe_allow_html=True)
     else:
         st.info("Brak zdjęć do pokazu. Przełącz na 'Wgraj Zdjęcie', aby dodać pierwsze fotki!")
