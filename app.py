@@ -1,9 +1,10 @@
+import streamlit as st
 # Bezpieczne pobieranie kluczy z secrets.toml
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 CLOUDINARY_CLOUD_NAME = st.secrets.get("CLOUDINARY_CLOUD_NAME", "")
 CLOUDINARY_API_KEY = st.secrets.get("CLOUDINARY_API_KEY", "")
 CLOUDINARY_API_SECRET = st.secrets.get("CLOUDINARY_API_SECRET", "")
-import streamlit as st
+
 import google.generativeai as genai
 import cloudinary
 import cloudinary.uploader
