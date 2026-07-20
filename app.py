@@ -5,12 +5,12 @@ import random
 
 st.set_page_config(page_title="18. Urodziny Zuzi - Foto Pokaz", layout="wide")
 
-# --- KLUCZE ZASZYTE NA STAŁE (BRAK POTRZEBY WPISYWANIA) ---
-GEMINI_API_KEY = "TUTAJ_WPISZ_KLUCZ_GEMINI"
-CLOUDINARY_CLOUD_NAME = "TUTAJ_WPISZ_CLOUD_NAME"
-CLOUDINARY_API_KEY = "TUTAJ_WPISZ_CLOUDINARY_API_KEY"
-CLOUDINARY_API_SECRET = "TUTAJ_WPISZ_CLOUDINARY_API_SECRET"
-# --------------------------------------------------------
+# --- KLUCZE ZASZYTE NA STAŁE ---
+GEMINI_API_KEY = "AIzaSy..." # wpisz swój pełny klucz Gemini
+CLOUDINARY_CLOUD_NAME = "fbdxr61x"
+CLOUDINARY_API_KEY = "159654323459224"
+CLOUDINARY_API_SECRET = "rpCA9X3dkHMS-N5VvrCiH2YEtuaQ"
+# -----------------------------
 
 import google.generativeai as genai
 import cloudinary
@@ -135,5 +135,4 @@ else:
         st.info("Czekamy na pierwsze zdjęcia! Wrzuć coś z telefonu.")
         time.sleep(5)
         st.rerun()
-
 
