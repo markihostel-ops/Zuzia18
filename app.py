@@ -145,3 +145,4 @@ else:
         st.info("Czekamy na pierwsze zdjęcia! Wrzuć coś z telefonu.")
         time.sleep(5)
         st.rerun()
+
