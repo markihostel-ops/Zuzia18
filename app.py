@@ -56,7 +56,7 @@ if view_mode == "Wgraj Zdjęcie (Goście)":
         if uploaded_files:
             if st.button("🚀 Wyślij zdjęcia do pokazu"):
                 with st.spinner("Wysyłam i generuję podpisy AI..."):
-                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    model = genai.GenerativeModel("gemini-2.5-flash")
                     for uploaded_file in uploaded_files:
                         try:
                             upload_result = cloudinary.uploader.upload(uploaded_file)
@@ -78,14 +78,12 @@ if view_mode == "Wgraj Zdjęcie (Goście)":
 else:
     st.title("🎬 Ekran Projektora / Pokaz")
 
-    # Kontrola slajdów dla DJ-a w panelu bocznym
     st.sidebar.markdown("---")
     st.sidebar.subheader("🎛️ Kontrola Slajdów")
     pause_show = st.sidebar.checkbox("Pauza pokazu")
 
     if st.session_state.active_items:
         if not pause_show:
-            # Automatyczna zmiana co 7 sekund
             time.sleep(7)
             st.session_state.current_index = (st.session_state.current_index + 1) % len(st.session_state.active_items)
             st.rerun()
