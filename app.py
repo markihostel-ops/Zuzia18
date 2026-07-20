@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 import os
+import random
 
 st.set_page_config(page_title="18. Urodziny Zuzi - Foto Pokaz", layout="wide")
 
@@ -26,7 +27,6 @@ if CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# Plik bazy danych na serwerze, żeby telefony i projektor widziały dokładnie to samo
 DB_FILE = "galeria_zuzi.txt"
 
 def load_gallery():
@@ -76,49 +76,54 @@ if view_mode == "Wgraj Zdjęcie (Goście)":
 
         if uploaded_files:
             if st.button("🚀 Wyślij zdjęcia do pokazu"):
-                with st.spinner("Wysyłam na telebim i angażuję AI do wymyślenia haseł..."):
+                with st.spinner("Przesyłam foty i generuję unikalne, bekowe teksty..."):
                     model = genai.GenerativeModel("gemini-2.0-flash")
+
+                    fallbacks = [
+                        "Kto rano wstaje, ten ma największego kaca po osiemnastce Zuzi! 💀",
+                        "Tu miało być kulturalnie, ale wyszło jak zwykle! 🥂",
+                        "Fotka za miliony, a dowody zostaną zniszczone rano! 📸",
+                        "Zuzia nie bierze jeńców, impreza życia! 🔥",
+                        "Ale dymy, tego nikt nie wygumkuje z pamięci! 🚀",
+                        "Stylówa roku, proszę o brawa! 👑"
+                    ]
+
                     for i, uploaded_file in enumerate(uploaded_files):
                         try:
-                            # 1. Upload do Cloudinary
                             upload_result = cloudinary.uploader.upload(uploaded_file)
                             image_url = upload_result.get("secure_url")
 
-                            # 2. Mocny, bezwzględnie śmieszny prompt dla AI
-                            caption = "Ale impreza! 🔥"
+                            caption = ""
                             try:
                                 image_bytes = uploaded_file.getvalue()
                                 image_obj = Image.open(BytesIO(image_bytes))
                                 prompt = (
-                                    "Jesteś bezczelnym, zabawnym imprezowiczem na 18. urodzinach Zuzi. "
-                                    "Spojrzyj na to zdjęcie i wymyśl KRÓTKI, bardzo śmieszny, wręcz ironiczny lub slangowy podpis po polsku "
-                                    "nawiązujący do tego, co dokładnie robią ludzie na zdjęciu. Zero grzeczności, ma być bekowa szpila lub super mocny żart z emoji. "
-                                    "Maksymalnie jedno zdanie."
+                                    "Jesteś bezczelnym komikiem na 18. urodzinach Zuzi. "
+                                    "Przeanalizuj to zdjęcie i wymyśl ULTRA ŚMIESZNY, ironiczny, złośliwy lub mocno imprezowy podpis po polsku. "
+                                    "Użyj ostrych żartów, slangu albo celnej puenty o tym, co kto robi na fotce. Zero nudy, zero sucharów, ma być zwała! "
+                                    "Maksymalnie 1 zdanie z odpowiednimi emoji."
                                 )
                                 response = model.generate_content([prompt, image_obj])
                                 if response and response.text:
                                     caption = response.text.strip()
                             except Exception:
-                                fallbacks = [
-                                    "Kto rano wstaje, ten ma kaca po osiemnastce Zuzi! 🍻",
-                                    "Tu się dzieje historia... albo kolejna dramka! 😂",
-                                    "Zuzia dziękuje za ten sztos! 🔥",
-                                    "Klimat gęstszy niż tort urodzinowy! 🎂"
-                                ]
-                                caption = fallbacks[i % len(fallbacks)]
+                                pass
 
-                            # Zapis do pliku tekstowego na serwerze (widoczny dla każdego)
+                            # Jeśli AI nie odpowiedziało przez limity, bierzemy losowy, unikalny tekst z puli
+                            if not caption:
+                                caption = random.choice(fallbacks)
+
                             save_item(image_url, caption)
 
-                            if len(uploaded_files) > 1:
-                                time.sleep(1)
+                            # Odczekaj 3 sekundy między zdjęciami, aby nie przekroczyć limitu zapytań do Gemini
+                            time.sleep(3)
 
                         except Exception as e:
                             st.error(f"Błąd przy pliku: {e}")
 
                     st.success("Wszystkie zdjęcia dotarły na telebim! 🎉")
 
-# --- WIDOK 2: DJ / PROJEKTOR (Pełna automatyzacja) ---
+# --- WIDOK 2: DJ / PROJEKTOR ---
 else:
     st.title("🎬 Ekran Projektora / Pokaz na Żywo")
 
@@ -127,11 +132,9 @@ else:
     auto_play = st.sidebar.checkbox("Automatyczna zmiana slajdów (Auto-Play)", value=True)
     slide_delay = st.sidebar.slider("Czas wyświetlania zdjęcia (sekundy)", 3, 15, 7)
 
-    # Pobieramy aktualną listę bezpośrednio z pliku serwerowego
     items = load_gallery()
 
     if items:
-        # Zabezpieczenie indeksu, jeśli usunięto pliki
         if st.session_state.current_index >= len(items):
             st.session_state.current_index = 0
 
@@ -140,15 +143,13 @@ else:
 
         st.image(item["url"], use_container_width=True)
         st.markdown(f"<h1 style='text-align: center; color: #ff4b4b; text-shadow: 2px 2px 4px #000;'>{item['caption']}</h1>", unsafe_allow_html=True)
-        st.caption(f"Zdjęcie {idx + 1} z {len(items)} (Synchronizacja w czasie rzeczywistym)")
+        st.caption(f"Zdjęcie {idx + 1} z {len(items)} (Synchronizacja na żywo)")
 
         if auto_play:
             time.sleep(slide_delay)
             st.session_state.current_index = (st.session_state.current_index + 1) % len(items)
             st.rerun()
     else:
-        st.info("Czekamy na pierwsze zdjęcia! Goście mogą wrzucać fotki przez telefon (kod QR), a pokażą się tutaj automatycznie.")
-        # Odświeżaj widok projektora co 5 sekund, żeby sprawdzić, czy ktoś coś wrzucił
+        st.info("Czekamy na pierwsze zdjęcia! Goście mogą wrzucać fotki przez telefon, a pojawią się tutaj same.")
         time.sleep(5)
         st.rerun()
-
