@@ -44,6 +44,15 @@ DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
 
+@st.cache_resource
+def get_gemini_model():
+    generation_config = {
+        "temperature": 1.3,
+        "top_p": 0.95,
+        "top_k": 40
+    }
+    return genai.GenerativeModel("gemini-2.0-flash", generation_config=generation_config)
+
 def load_gallery():
     if not os.path.exists(DB_FILE):
         return []
@@ -79,6 +88,129 @@ def save_full_gallery(items):
                     f.write(f"{it['url']}|{it['caption']}\n")
     except Exception as e:
         st.error(f"Blad zapisu: {e}")
+
+def is_good_caption(text):
+    if not text:
+        return False
+    clean = text.strip().lower()
+    if len(clean) < 15:
+        return False
+    forbidden = [
+        "nie mogę rozpoznać", "wydaje się", "prawdopodobnie",
+        "nie jestem w stanie", "jako model", "przepraszam"
+    ]
+    for word in forbidden:
+        if word in clean:
+            return False
+    return True
+
+def get_dynamic_fallback(img):
+    width, height = img.size
+    ratio = width / height
+
+    vertical_fallbacks = [
+        "Ktoś tu dumnie pozuje w pełnej okazałości! 📸",
+        "Pionowe ujęcie, idealnie uchwycona sylwetka! 🔥",
+        "Stylówa na tym zdjęciu nie do przebicia! ✨",
+        "Tak się pozuje na 18-ce Zuzi! 🥂",
+        "Wysoko wysoko, obiektyw skierowany na gwiazdę wieczoru! ⭐",
+        "Kadr pionowy, a emocje maksymalne! 💥",
+        "Ktoś tu ewidentnie skradł show! 👑",
+        "Elegancka poza, pełna koncentracja przed obiektywem! 🎭",
+        "Takie ujęcia zostają w pamięci na zawsze! 💫",
+        "Model / modelka gotowa na wybieg! 💃",
+        "Z bliska widać każdy szczegół tej stylizacji! 🕶️",
+        "Nawet bez AI widać, że tu się dzieje magia! 🔮",
+        "Kadr na medal, bez dwóch zdań! 🎯",
+        "Uśmiech do kamery i lecimy dalej z imprezą! 😄",
+        "Takie pamiątki z urodzin Zuzi są bezcenne! 💎",
+        "Baczność! Kadr pod kontrolą! 🫡",
+        "Oto definicja dobrej zabawy w pionie! 🚀",
+        "Taka fotka to czysty złoty materiał! 🏆",
+        "Klimat rodem z czerwonego dywanu! 🎬",
+        "Kto tu próbuje ukryć uśmiech? 🤭",
+        "Zadziorne spojrzenie prosto w obiektyw! 👀",
+        "Styl i klasa na jednym, pionowym kadrze! 🍸",
+        "Niezapomniane chwilerka z osiemnastki! 🥳",
+        "Widać, że energia dopisuje od samego początku! ⚡",
+        "Takie ujęcia budują tę imprezę! 🏗️"
+    ]
+
+    horizontal_fallbacks = [
+        "Szeroki kadr, żeby zmieścić całą tę ekipę! 🌍",
+        "Impreza rozkręca się na pełnej szerokości ekranu! 🚀",
+        "Pełen kadr, pełen spontan! 📸",
+        "Tu się dzieje więcej, niż obiektyw zdoła objąć! 🔥",
+        "Szerokokątne szaleństwo u Zuzi! 🎉",
+        "Wszystkich nas nie zmieścicie, a jednak się udało! 🥳",
+        "Panoramka warta każdej sekundnika! ⏳",
+        "Tego widoku nie da się zapomnieć! 🌅",
+        "Kadr poziomy, a emocje wystrzeliły w kosmos! 🌌",
+        "Ekipa w komplecie, klimat nie do podrobienia! 🍻",
+        "Szeroki horyzont i czysta radość! 🌈",
+        "Tak wygląda pełna integracja towarzyska! 🤝",
+        "Ujęcie z perspektywy centrali dowodzenia! 🎛️",
+        "Wszystko pod kontrolą, chociaż parkiet płonie! 🔥",
+        "Szeroki uśmiech dla całej widowni! 😄",
+        "Taki krajobraz imprezowy to my rozumiemy! 🌆",
+        "Kadr pełen życia, energii i dobrego humoru! 🎈",
+        "Z tej perspektywy widać znacznie więcej! 🔭",
+        "Gromadka w natarciu, kto ich zatrzyma? 🏃‍♂️",
+        "Szeroko, głośno i absolutnie legalnie! 🎶",
+        "Wspomnienia uwiecznione w pełnej szerokości! 🖼️",
+        "Imprezowy kadr panoramiczny! 🎪",
+        "Tutaj nikt nie stoi w kącie! 🕺",
+        "Pełna panorama radości na osiemnastce! 🌟",
+        "Złote proporcje dla najlepszych momentów! 🥇"
+    ]
+
+    if ratio < 1.0:
+        return random.choice(vertical_fallbacks)
+    else:
+        return random.choice(horizontal_fallbacks)
+
+def generate_unique_caption(img):
+    model = get_gemini_model()
+
+    # KROK 1: Analiza wizualna (Opis elementów)
+    step1_prompt = (
+        "Przeanalizuj to zdjęcie z 18. urodzin. Wypisz w 1 krótkim zdaniu po polsku detale: "
+        "kto/co na nim jest, kolory ubrań, rekwizyty w rękach, emocje lub otoczenie."
+    )
+
+    image_description = ""
+    for attempt in range(1, 6):
+        try:
+            response = model.generate_content([step1_prompt, img])
+            if response and hasattr(response, "text") and response.text:
+                image_description = response.text.strip()
+                if len(image_description) > 5:
+                    break
+        except Exception as e:
+            sleep_time = 2 ** (attempt - 1)
+            time.sleep(sleep_time)
+
+    # KROK 2: Generowanie podpisu złośliwego komika na podstawie opisu
+    step2_prompt = (
+        f"Na podstawie tego opisu zdjęcia: '{image_description}', "
+        "jesteś bezczelnym, zabawnym komikiem na 18. urodzinach. "
+        "Napisz złośliwy, dowcipny i ironiczny komentarz (1-2 zdania z emoji), odnoszący się do tych detali. "
+        "ZAKAZ ogólników. Zwróć absolutnie tylko sam tekst podpisu, bez cudzysłowów."
+    )
+
+    for attempt in range(1, 6):
+        try:
+            response = model.generate_content([step2_prompt, img])
+            if response and hasattr(response, "text") and response.text:
+                caption = response.text.strip().replace('"', '').replace("'", "")
+                if is_good_caption(caption):
+                    return caption
+        except Exception as e:
+            sleep_time = 2 ** (attempt - 1)
+            time.sleep(sleep_time)
+
+    # Jeśli AI zawiedzie, zwracamy unikalny fallback oparty o geometrię zdjęcia
+    return get_dynamic_fallback(img)
 
 st.sidebar.markdown("---")
 view_mode = st.sidebar.radio(
@@ -137,14 +269,12 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
-                # Wysoka temperatura i model flash do błyskawicznej, żywej analizy
-                generation_config = {"temperature": 1.0}
-                model = genai.GenerativeModel("gemini-2.0-flash", generation_config=generation_config)
-
                 total_files = len(uploaded_files)
-                for i, uploaded_file in enumerate(uploaded_files):
-                    status_text.text(f"Analizuję zdjęcie {i+1} z {total_files}...")
+                pending_items = []
 
+                # ETAP 1: Błyskawiczny upload i zapis z szybkim fallbackiem, żeby zdjęcia pojawiły się natychmiast
+                for i, uploaded_file in enumerate(uploaded_files):
+                    status_text.text(f"Przesyłam zdjęcie {i+1} z {total_files}...")
                     try:
                         image_bytes = uploaded_file.getvalue()
                         img = Image.open(BytesIO(image_bytes))
@@ -160,45 +290,30 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         upload_result = cloudinary.uploader.upload(byte_arr, folder=CLOUDINARY_FOLDER)
                         image_url = upload_result.get("secure_url")
 
-                        if not image_url:
-                            continue
-
-                        caption = "Zuzia 18! 🔥"
-                        success_ai = False
-
-                        for attempt in range(3):
-                            try:
-                                unique_seed = str(time.time() + random.random())
-                                # Bardzo restrykcyjny prompt wymuszający bezpośredni opis tego, co widać na zdjęciu
-                                prompt = (
-                                    f"[ID: {unique_seed}] "
-                                    "Jesteś bezczelnym komikiem na 18. urodzinach. Spójrz na to zdjęcie i NAPISZ CO NA NIM WIDZISZ, "
-                                    "odnosząc się bezpośrednio do szczegółów (kolor sukienki/ubrania, co ktoś trzyma, jaka jest mina, poza lub rekwizyt). "
-                                    "Skomentuj to złośliwie w 1-2 krótkich zdaniach z emoji. "
-                                    "ZAKAZ używania ogólnikowych fraz o 'imprezie' czy 'klimacie' – masz opisać to konkretne ujęcie! "
-                                    "Zwróć absolutnie tylko sam tekst podpisu, bez żadnych cudzysłowów."
-                                )
-
-                                response = model.generate_content([prompt, img])
-                                if response and hasattr(response, "text") and response.text:
-                                    text_resp = response.text.strip().replace('"', '').replace("'", "")
-                                    if len(text_resp) > 5:
-                                        caption = text_resp
-                                        success_ai = True
-                                        break
-                            except Exception:
-                                time.sleep(1)
-
-                        if not success_ai:
-                            caption = "Ale akcja na tym zdjęciu! 📸🔥"
-
-                        save_item(image_url, caption)
+                        if image_url:
+                            initial_caption = get_dynamic_fallback(img)
+                            save_item(image_url, initial_caption)
+                            # Zapisujemy referencję do analizy w tle
+                            pending_items.append({"url": image_url, "img_obj": img})
                     except Exception as e:
-                        st.error(f"Błąd przy zdjęciu {i+1}: {e}")
+                        st.error(f"Błąd przesyłania zdjęcia {i+1}: {e}")
 
                     progress_bar.progress((i + 1) / total_files)
 
-                status_text.text("Gotowe! Zdjęcia trafiły na ekran.")
+                # ETAP 2: Analiza AI w tle i aktualizacja wpisów w pliku
+                status_text.text("Zdjęcia na ekranie! Trwa inteligentna analiza AI w tle...")
+
+                current_items = load_gallery()
+                for pending in pending_items:
+                    ai_caption = generate_unique_caption(pending["img_obj"])
+                    # Podmieniamy wstępny fallback na docelowy opis AI w liście elementów
+                    for item in current_items:
+                        if item["url"] == pending["url"]:
+                            item["caption"] = ai_caption
+
+                save_full_gallery(current_items)
+
+                status_text.text("Gotowe! Wszystkie zdjęcia wgrane i przeanalizowane.")
                 time.sleep(1)
                 st.session_state.uploader_key += 1
                 st.rerun()
@@ -246,3 +361,4 @@ else:
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc coś ze swojego telefonu.")
+
