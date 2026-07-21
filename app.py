@@ -245,8 +245,3 @@ else:
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc coś ze swojego telefonu.")
-
-Pozdrawiam
-Batogowska Kinga
-
-
