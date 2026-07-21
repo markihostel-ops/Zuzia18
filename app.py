@@ -14,19 +14,27 @@ from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Zuzia 18", layout="wide")
 
-# Bezpieczne pobieranie kluczy bezpośrednio ze Streamlit Secrets
-gemini_key = st.secrets.get("GEMINI_API_KEY", "")
-cloud_name = st.secrets.get("CLOUDINARY_CLOUD_NAME", "")
-cloudinary_key = st.secrets.get("CLOUDINARY_API_KEY", "")
-cloudinary_secret = st.secrets.get("CLOUDINARY_API_SECRET", "")
+if "gemini_key" not in st.session_state:
+    st.session_state.gemini_key = st.secrets.get("GEMINI_API_KEY", "")
+if "cloud_name" not in st.session_state:
+    st.session_state.cloud_name = st.secrets.get("CLOUDINARY_CLOUD_NAME", "")
+if "cloudinary_key" not in st.session_state:
+    st.session_state.cloudinary_key = st.secrets.get("CLOUDINARY_API_KEY", "")
+if "cloudinary_secret" not in st.session_state:
+    st.session_state.cloudinary_secret = st.secrets.get("CLOUDINARY_API_SECRET", "")
 
 st.sidebar.title("Panel Sterowania")
 
-# Informacja w panelu o statusie kluczy (bez pól input, które resetuje F5)
-if gemini_key and cloud_name:
-    st.sidebar.success("Klucze zczytane pomyślnie ze secrets! 🚀")
-else:
-    st.sidebar.error("Brak kluczy w pliku secrets.toml!")
+gemini_key = st.sidebar.text_input("Gemini API Key", type="password", value=st.session_state.gemini_key, key="input_gemini")
+cloud_name = st.sidebar.text_input("Cloudinary Cloud Name", value=st.session_state.cloud_name, key="input_cloud")
+cloudinary_key = st.sidebar.text_input("Cloudinary API Key", type="password", value=st.session_state.cloudinary_key, key="input_ckey")
+cloudinary_secret = st.sidebar.text_input("Cloudinary API Secret", type="password", value=st.session_state.cloudinary_secret, key="input_csec")
+
+# Aktualizacja stanu
+st.session_state.gemini_key = gemini_key
+st.session_state.cloud_name = cloud_name
+st.session_state.cloudinary_key = cloudinary_key
+st.session_state.cloudinary_secret = cloudinary_secret
 
 if cloud_name and cloudinary_key and cloudinary_secret:
     cloudinary.config(
@@ -121,7 +129,7 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
     st.header("Wrzuc fotki na zywo na ekran projektora!")
 
     if not cloud_name or not gemini_key:
-        st.error("Uzupełnij klucze w pliku secrets.toml na serwerze!")
+        st.error("Uzupełnij klucze w panelu bocznym po lewej stronie!")
     else:
         uploaded_files = st.file_uploader(
             "Wybierz zdjecia z telefonu:",
@@ -242,3 +250,7 @@ else:
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc coś ze swojego telefonu.")
+
+
+
+
