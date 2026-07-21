@@ -14,31 +14,20 @@ from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Zuzia 18", layout="wide")
 
-if "gemini_key" not in st.session_state:
-    st.session_state.gemini_key = st.secrets.get("GEMINI_API_KEY", "")
-if "cloud_name" not in st.session_state:
-    st.session_state.cloud_name = st.secrets.get("CLOUDINARY_CLOUD_NAME", "")
-if "cloudinary_key" not in st.session_state:
-    st.session_state.cloudinary_key = st.secrets.get("CLOUDINARY_API_KEY", "")
-if "cloudinary_secret" not in st.session_state:
-    st.session_state.cloudinary_secret = st.secrets.get("CLOUDINARY_API_SECRET", "")
+gemini_key = st.secrets.get("GEMINI_API_KEY", "")
+cloud_name = st.secrets.get("CLOUDINARY_CLOUD_NAME", "")
+cloudinary_key = st.secrets.get("CLOUDINARY_API_KEY", "")
+cloudinary_secret = st.secrets.get("CLOUDINARY_API_SECRET", "")
 
-st.sidebar.title("Panel Sterowania")
-
-gemini_key = st.sidebar.text_input("Gemini API Key", type="password", key="gemini_key")
-cloud_name = st.sidebar.text_input("Cloudinary Cloud Name", key="cloud_name")
-cloudinary_key = st.sidebar.text_input("Cloudinary API Key", type="password", key="cloudinary_key")
-cloudinary_secret = st.sidebar.text_input("Cloudinary API Secret", type="password", key="cloudinary_secret")
-
-if st.session_state.cloud_name and st.session_state.cloudinary_key and st.session_state.cloudinary_secret:
+if cloud_name and cloudinary_key and cloudinary_secret:
     cloudinary.config(
-        cloud_name=st.session_state.cloud_name,
-        api_key=st.session_state.cloudinary_key,
-        api_secret=st.session_state.cloudinary_secret
+        cloud_name=cloud_name,
+        api_key=cloudinary_key,
+        api_secret=cloudinary_secret
     )
 
-if st.session_state.gemini_key:
-    genai.configure(api_key=st.session_state.gemini_key)
+if gemini_key:
+    genai.configure(api_key=gemini_key)
 
 DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
@@ -80,7 +69,7 @@ def save_full_gallery(items):
     except Exception as e:
         st.error(f"Blad zapisu: {e}")
 
-st.sidebar.markdown("---")
+st.sidebar.title("Panel Sterowania")
 view_mode = st.sidebar.radio(
     "Wybierz widok:",
     ("Wgraj Zdjecie (Goscie)", "Pokaz na Zywo (DJ)")
@@ -94,7 +83,7 @@ if st.sidebar.button("Wyczysc cala galerie"):
             if os.path.exists(DB_FILE):
                 os.remove(DB_FILE)
 
-        if st.session_state.cloud_name and st.session_state.cloudinary_key and st.session_state.cloudinary_secret:
+        if cloud_name and cloudinary_key and cloudinary_secret:
             try:
                 resources = cloudinary.api.resources(type="upload", prefix=CLOUDINARY_FOLDER, max_results=500)
                 public_ids = [res["public_id"] for res in resources.get("resources", [])]
@@ -122,8 +111,8 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
     st.title("18. Urodziny Zuzi")
     st.header("Wrzuc fotki na zywo na ekran projektora!")
 
-    if not st.session_state.cloud_name or not st.session_state.gemini_key:
-        st.error("Uzupełnij klucze w panelu bocznym!")
+    if not cloud_name or not gemini_key:
+        st.error("Brak skonfigurowanych kluczy w Streamlit Secrets!")
     else:
         uploaded_files = st.file_uploader(
             "Wybierz zdjecia z telefonu:",
@@ -137,8 +126,20 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
-                generation_config = {"temperature": 1.2}
-                model = genai.GenerativeModel("gemini-2.0-flash", generation_config=generation_config)
+                # Ustawiamy stabilniejszą temperaturę i bezpieczniejsze filtry blokad
+                generation_config = {"temperature": 0.7}
+                safety_settings = [
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+                ]
+
+                model = genai.GenerativeModel(
+                    "gemini-2.0-flash",
+                    generation_config=generation_config,
+                    safety_settings=safety_settings
+                )
 
                 total_files = len(uploaded_files)
                 for i, uploaded_file in enumerate(uploaded_files):
@@ -162,34 +163,31 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         if not image_url:
                             continue
 
-                        caption = "Zuzia 18! 🔥"
+                        caption = f"Zuzia 18! 🔥"
                         success_ai = False
 
                         for attempt in range(3):
                             try:
-                                unique_seed = str(time.time() + random.random())
                                 prompt = (
-                                    f"[ID: {unique_seed}] "
-                                    "Jesteś bezczelnym, złośliwym komikiem prowadzącym 18. urodziny. "
-                                    "Musisz bezwzględnie opisać dokładnie to, co widzisz na tym zdjęciu: "
-                                    "kto dokładnie na nim jest, w co są ubrani, jaką mają minę, jak się ustawili lub co trzymają. "
-                                    "Zabronione jest używanie ogólnikowych haseł typu 'impreza', 'super zabawa' czy 'osiemnastka' bez odniesienia do konkretu z kadru! "
-                                    "Skomentuj to złośliwie, uszczypliwie lub mocno żartobliwie w maksymalnie 2 krótkich zdaniach, dodaj pasujące emoji. "
-                                    "Zwróć wyłącznie sam tekst komentarza, bez żadnych cudzysłowów i wstępów."
+                                    "Opisz bezczelnie i złośliwie to konkretne zdjęcie z 18. urodzin. "
+                                    "Zwróć uwagę na to, kto na nim jest, jak są ubrani, jakie mają miny lub co robią. "
+                                    "Napisz zabawny, uszczypliwy komentarz w maksymalnie 2 krótkich zdaniach, dodaj pasujące emoji. "
+                                    "Nie używaj ogólników, odnieś się do szczegółów z kadru. "
+                                    "Zwróć wyłącznie sam tekst, bez żadnych cudzysłowów."
                                 )
 
                                 response = model.generate_content([prompt, img])
                                 if response and hasattr(response, "text") and response.text:
                                     text_resp = response.text.strip().replace('"', '').replace("'", "")
-                                    if len(text_resp) > 5:
+                                    if len(text_resp) > 3:
                                         caption = text_resp
                                         success_ai = True
                                         break
-                            except Exception:
-                                time.sleep(1)
+                            except Exception as ex:
+                                time.sleep(0.5)
 
                         if not success_ai:
-                            caption = f"Ujęcie #{i+1} z osiemnastki Zuzi! 📸🔥"
+                            caption = f"Impreza u Zuzi w pełnym biegu! 🥂🔥"
 
                         save_item(image_url, caption)
                     except Exception as e:
