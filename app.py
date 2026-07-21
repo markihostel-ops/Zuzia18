@@ -131,7 +131,6 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
         if uploaded_files:
             if st.button("Wyslij zdjecia do pokazu"):
                 with st.spinner("Analizuję zdjęcia przez AI i generuję unikalne teksty..."):
-                    # Używamy modelu gemini-2.0-flash do analizy wzrokowej
                     model = genai.GenerativeModel("gemini-2.0-flash")
 
                     for uploaded_file in uploaded_files:
@@ -143,24 +142,37 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                             image_url = upload_result.get("secure_url")
 
                             caption = "Zuzia 18! 🔥"
-                            try:
-                                image_bytes = uploaded_file.getvalue()
-                                image_obj = Image.open(BytesIO(image_bytes))
+                            success_ai = False
 
-                                # Mocny, precyzyjny prompt zmuszający do analizy tego konkretnego obrazka
-                                prompt = (
-                                    "Jesteś bezczelnym, ostrym i zabawnym komikiem na 18. urodzinach Zuzi. "
-                                    "Obejrzyj dokładnie to konkretne zdjęcie i wymyśl na jego temat krótki, "
-                                    "ironiczny lub bardzo śmieszny komentarz po polsku (maksymalnie 1-2 zdania z emoji), "
-                                    "nawiązujący bezpośrednio do tego, co widzisz na tym zdjęciu. "
-                                    "Zwróć absolutnie tylko sam tekst podpisu, bez żadnych cudzysłowów i znaczników."
-                                )
+                            for attempt in range(3):
+                                try:
+                                    image_bytes = uploaded_file.getvalue()
+                                    image_obj = Image.open(BytesIO(image_bytes))
 
-                                response = model.generate_content([prompt, image_obj])
-                                if response and hasattr(response, "text") and response.text:
-                                    caption = response.text.strip().replace('"', '').replace("'", "")
-                            except Exception as ai_err:
-                                caption = f"Błąd AI: {str(ai_err)[:30]}"
+                                    prompt = (
+                                        "Jesteś bezczelnym, ostrym i zabawnym komikiem na 18. urodzinach Zuzi. "
+                                        "Obejrzyj dokładnie to konkretne zdjęcie i wymyśl na jego temat krótki, "
+                                        "ironiczny lub bardzo śmieszny komentarz po polsku (maksymalnie 1-2 zdania z emoji), "
+                                        "nawiązujący bezpośrednio do tego, co widzisz na tym zdjęciu (ludzi, przedmiotów, sytuacji). "
+                                        "Zwróć absolutnie tylko sam tekst podpisu, bez żadnych cudzysłowów i znaczników."
+                                    )
+
+                                    response = model.generate_content([prompt, image_obj])
+                                    if response and hasattr(response, "text") and response.text:
+                                        caption = response.text.strip().replace('"', '').replace("'", "")
+                                        success_ai = True
+                                        break
+                                except Exception:
+                                    time.sleep(2)
+
+                            if not success_ai:
+                                dynamic_fallbacks = [
+                                    "Kto wpadł na ten pomysł? Dowody zostaną zniszczone! 📸",
+                                    "Stylówa za miliony, tego nie da się odzobaczyć! 💀",
+                                    "Oficjalnie najlepszy moment imprezy Zuzi! 🥂",
+                                    "Klimat gęsty można kroić nożem! 🔥"
+                                ]
+                                caption = random.choice(dynamic_fallbacks)
 
                             save_item(image_url, caption)
                         except Exception as e:
