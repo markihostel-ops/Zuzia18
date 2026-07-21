@@ -25,26 +25,20 @@ if "cloudinary_secret" not in st.session_state:
 
 st.sidebar.title("Panel Sterowania")
 
-gemini_key = st.sidebar.text_input("Gemini API Key", type="password", value=st.session_state.gemini_key, key="input_gemini")
-cloud_name = st.sidebar.text_input("Cloudinary Cloud Name", value=st.session_state.cloud_name, key="input_cloud")
-cloudinary_key = st.sidebar.text_input("Cloudinary API Key", type="password", value=st.session_state.cloudinary_key, key="input_ckey")
-cloudinary_secret = st.sidebar.text_input("Cloudinary API Secret", type="password", value=st.session_state.cloudinary_secret, key="input_csec")
+gemini_key = st.sidebar.text_input("Gemini API Key", type="password", key="gemini_key")
+cloud_name = st.sidebar.text_input("Cloudinary Cloud Name", key="cloud_name")
+cloudinary_key = st.sidebar.text_input("Cloudinary API Key", type="password", key="cloudinary_key")
+cloudinary_secret = st.sidebar.text_input("Cloudinary API Secret", type="password", key="cloudinary_secret")
 
-# Aktualizacja stanu
-st.session_state.gemini_key = gemini_key
-st.session_state.cloud_name = cloud_name
-st.session_state.cloudinary_key = cloudinary_key
-st.session_state.cloudinary_secret = cloudinary_secret
-
-if cloud_name and cloudinary_key and cloudinary_secret:
+if st.session_state.cloud_name and st.session_state.cloudinary_key and st.session_state.cloudinary_secret:
     cloudinary.config(
-        cloud_name=cloud_name,
-        api_key=cloudinary_key,
-        api_secret=cloudinary_secret
+        cloud_name=st.session_state.cloud_name,
+        api_key=st.session_state.cloudinary_key,
+        api_secret=st.session_state.cloudinary_secret
     )
 
-if gemini_key:
-    genai.configure(api_key=gemini_key)
+if st.session_state.gemini_key:
+    genai.configure(api_key=st.session_state.gemini_key)
 
 DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
@@ -100,7 +94,7 @@ if st.sidebar.button("Wyczysc cala galerie"):
             if os.path.exists(DB_FILE):
                 os.remove(DB_FILE)
 
-        if cloud_name and cloudinary_key and cloudinary_secret:
+        if st.session_state.cloud_name and st.session_state.cloudinary_key and st.session_state.cloudinary_secret:
             try:
                 resources = cloudinary.api.resources(type="upload", prefix=CLOUDINARY_FOLDER, max_results=500)
                 public_ids = [res["public_id"] for res in resources.get("resources", [])]
@@ -128,8 +122,8 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
     st.title("18. Urodziny Zuzi")
     st.header("Wrzuc fotki na zywo na ekran projektora!")
 
-    if not cloud_name or not gemini_key:
-        st.error("Uzupełnij klucze w panelu bocznym po lewej stronie!")
+    if not st.session_state.cloud_name or not st.session_state.gemini_key:
+        st.error("Uzupełnij klucze w panelu bocznym!")
     else:
         uploaded_files = st.file_uploader(
             "Wybierz zdjecia z telefonu:",
@@ -250,7 +244,3 @@ else:
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc coś ze swojego telefonu.")
-
-
-
-
