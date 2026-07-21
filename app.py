@@ -70,6 +70,16 @@ def save_item(url, caption):
     except Exception as e:
         st.error(f"Blad zapisu: {e}")
 
+def save_full_gallery(items):
+    lock = FileLock(LOCK_FILE)
+    try:
+        with lock:
+            with open(DB_FILE, "w", encoding="utf-8") as f:
+                for it in items:
+                    f.write(f"{it['url']}|{it['caption']}\n")
+    except Exception as e:
+        st.error(f"Blad zapisu: {e}")
+
 st.sidebar.markdown("---")
 view_mode = st.sidebar.radio(
     "Wybierz widok:",
@@ -120,15 +130,9 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
 
         if uploaded_files:
             if st.button("Wyslij zdjecia do pokazu"):
-                with st.spinner("Przesylam zdjecia i generuje podpisy AI..."):
+                with st.spinner("Analizuję zdjęcia przez AI i generuję unikalne teksty..."):
+                    # Używamy modelu gemini-2.0-flash do analizy wzrokowej
                     model = genai.GenerativeModel("gemini-2.0-flash")
-
-                    fallbacks = [
-                        "Impreza roku! 💀",
-                        "Pozdrowienia dla Zuzi! 🥂",
-                        "Niezapomniany klimat! 📸",
-                        "Ale dym! 🔥"
-                    ]
 
                     for uploaded_file in uploaded_files:
                         if (uploaded_file.size / (1024 * 1024)) > MAX_FILE_SIZE_MB:
@@ -138,40 +142,57 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                             upload_result = cloudinary.uploader.upload(uploaded_file, folder=CLOUDINARY_FOLDER)
                             image_url = upload_result.get("secure_url")
 
-                            caption = ""
+                            caption = "Zuzia 18! 🔥"
                             try:
                                 image_bytes = uploaded_file.getvalue()
                                 image_obj = Image.open(BytesIO(image_bytes))
-                                prompt = "Jesteś bezczelnym komikiem na 18. urodzinach Zuzi. Wymyśl krótki, śmieszny podpis po polsku do 1 zdania z emoji. Zwróć tylko czysty tekst podpisu bez żadnego formatowania i bez znaczników HTML."
+
+                                # Mocny, precyzyjny prompt zmuszający do analizy tego konkretnego obrazka
+                                prompt = (
+                                    "Jesteś bezczelnym, ostrym i zabawnym komikiem na 18. urodzinach Zuzi. "
+                                    "Obejrzyj dokładnie to konkretne zdjęcie i wymyśl na jego temat krótki, "
+                                    "ironiczny lub bardzo śmieszny komentarz po polsku (maksymalnie 1-2 zdania z emoji), "
+                                    "nawiązujący bezpośrednio do tego, co widzisz na tym zdjęciu. "
+                                    "Zwróć absolutnie tylko sam tekst podpisu, bez żadnych cudzysłowów i znaczników."
+                                )
+
                                 response = model.generate_content([prompt, image_obj])
                                 if response and hasattr(response, "text") and response.text:
                                     caption = response.text.strip().replace('"', '').replace("'", "")
-                            except Exception:
-                                pass
-
-                            if not caption:
-                                caption = random.choice(fallbacks)
+                            except Exception as ai_err:
+                                caption = f"Błąd AI: {str(ai_err)[:30]}"
 
                             save_item(image_url, caption)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            st.error(f"Błąd wysyłki: {e}")
 
-                    st.success("Wszystkie zdjecia wyslane!")
+                    st.success("Wszystkie zdjęcia wysłane i przeanalizowane!")
 else:
     st.title("Ekran Projektora / Pokaz na Zywo")
 
-    # Odświeżanie strony co 2 sekundy
     st_autorefresh(interval=2000, key="dj_autorefresh")
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Zarzadzanie pojedynczymi zdjeciami")
+
+    items = load_gallery()
+
+    if items:
+        for idx, it in enumerate(items):
+            col_txt, col_btn = st.sidebar.columns([3, 1])
+            col_txt.text(f"#{idx+1}: {it['caption'][:15]}...")
+            if col_btn.button("Skasuj", key=f"del_{idx}"):
+                items.pop(idx)
+                save_full_gallery(items)
+                st.session_state.current_index = 0
+                st.rerun()
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Ustawienia Pokazu")
     auto_play = st.sidebar.checkbox("Automatyczna zmiana slajdow", value=True)
     slide_delay_sec = st.sidebar.slider("Czas wyswietlania (sekundy)", 3, 15, 5)
 
-    items = load_gallery()
-
     if items:
-        # Zabezpieczenie przed wyjściem poza zakres
         if st.session_state.current_index >= len(items):
             st.session_state.current_index = 0
 
@@ -179,12 +200,9 @@ else:
         item = items[idx]
 
         st.image(item["url"], use_container_width=True)
-
-        # Bezpieczne wyświetlenie tekstu przez zwykły header zamiast surowego HTML
         st.markdown(f"<h2 style='text-align: center;'>{item['caption']}</h2>", unsafe_allow_html=True)
         st.caption(f"Zdjecie {idx + 1} z {len(items)}")
 
-        # Płynna zmiana slajdów w oparciu o czas (bez blokowania wątku przez time.sleep)
         if auto_play and len(items) > 1:
             current_time = time.time()
             if current_time - st.session_state.last_slide_time >= slide_delay_sec:
@@ -193,6 +211,3 @@ else:
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc coś ze swojego telefonu.")
-
-
-
