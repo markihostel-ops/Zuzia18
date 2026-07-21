@@ -12,9 +12,7 @@ import google.generativeai as genai
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(
-    page_title="Zuzia 18", layout="wide"
-)
+st.set_page_config(page_title="Zuzia 18", layout="wide")
 
 if "gemini_key" not in st.session_state:
     st.session_state.gemini_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -104,8 +102,8 @@ if st.sidebar.button("Wyczysc cala galerie"):
 if "current_index" not in st.session_state:
     st.session_state.current_index = 0
 
-if "paused" not in st.session_state:
-    st.session_state.paused = False
+if "last_slide_time" not in st.session_state:
+    st.session_state.last_slide_time = time.time()
 
 if view_mode == "Wgraj Zdjecie (Goscie)":
     st.title("18. Urodziny Zuzi")
@@ -144,10 +142,10 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                             try:
                                 image_bytes = uploaded_file.getvalue()
                                 image_obj = Image.open(BytesIO(image_bytes))
-                                prompt = "Jesteś bezczelnym komikiem na 18. urodzinach Zuzi. Wymyśl krótki, śmieszny podpis po polsku z emoji."
+                                prompt = "Jesteś bezczelnym komikiem na 18. urodzinach Zuzi. Wymyśl krótki, śmieszny podpis po polsku do 1 zdania z emoji. Zwróć tylko czysty tekst podpisu bez żadnego formatowania i bez znaczników HTML."
                                 response = model.generate_content([prompt, image_obj])
                                 if response and hasattr(response, "text") and response.text:
-                                    caption = response.text.strip()
+                                    caption = response.text.strip().replace('"', '').replace("'", "")
                             except Exception:
                                 pass
 
@@ -161,16 +159,19 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                     st.success("Wszystkie zdjecia wyslane!")
 else:
     st.title("Ekran Projektora / Pokaz na Zywo")
+
+    # Odświeżanie strony co 2 sekundy
     st_autorefresh(interval=2000, key="dj_autorefresh")
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Ustawienia Pokazu")
     auto_play = st.sidebar.checkbox("Automatyczna zmiana slajdow", value=True)
-    slide_delay_sec = st.sidebar.slider("Czas wyswietlania (sekundy)", 3, 15, 6)
+    slide_delay_sec = st.sidebar.slider("Czas wyswietlania (sekundy)", 3, 15, 5)
 
     items = load_gallery()
 
     if items:
+        # Zabezpieczenie przed wyjściem poza zakres
         if st.session_state.current_index >= len(items):
             st.session_state.current_index = 0
 
@@ -178,14 +179,20 @@ else:
         item = items[idx]
 
         st.image(item["url"], use_container_width=True)
-        st.markdown(f"<h1 style='text-align: center; color: #ff4b4b;'>{item['caption']}</h1>", unsafe_allow_html=False)
+
+        # Bezpieczne wyświetlenie tekstu przez zwykły header zamiast surowego HTML
+        st.markdown(f"<h2 style='text-align: center;'>{item['caption']}</h2>", unsafe_allow_html=True)
         st.caption(f"Zdjecie {idx + 1} z {len(items)}")
 
-        if auto_play:
-            time.sleep(slide_delay_sec)
-            st.session_state.current_index = (st.session_state.current_index + 1) % len(items)
-            st.rerun()
+        # Płynna zmiana slajdów w oparciu o czas (bez blokowania wątku przez time.sleep)
+        if auto_play and len(items) > 1:
+            current_time = time.time()
+            if current_time - st.session_state.last_slide_time >= slide_delay_sec:
+                st.session_state.current_index = (st.session_state.current_index + 1) % len(items)
+                st.session_state.last_slide_time = current_time
+                st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc coś ze swojego telefonu.")
-        time.sleep(3)
-        st.rerun()
+
+
+
