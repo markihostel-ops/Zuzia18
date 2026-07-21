@@ -43,7 +43,6 @@ if st.session_state.gemini_key:
 DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
-MAX_FILE_SIZE_MB = 10
 
 def load_gallery():
     if not os.path.exists(DB_FILE):
@@ -56,7 +55,8 @@ def load_gallery():
                 for line in f:
                     if "|" in line:
                         parts = line.strip().split("|", 1)
-                        items.append({"url": parts[0], "caption": parts[1]})
+                        if parts[0].startswith("http"):  # Sprawdzamy czy URL jest poprawny
+                            items.append({"url": parts[0], "caption": parts[1]})
     except Exception:
         pass
     return items
@@ -127,75 +127,88 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
     else:
         uploaded_files = st.file_uploader(
             "Wybierz zdjecia z telefonu:",
-            type=["jpg", "jpeg", "png"],
+            type=["jpg", "jpeg", "png", "heic"],
             accept_multiple_files=True,
             key=f"uploader_{st.session_state.uploader_key}"
         )
 
         if uploaded_files:
             if st.button("Wyslij zdjecia do pokazu"):
-                with st.spinner("Analizuję zdjęcia przez AI i generuję unikalne teksty..."):
-                    generation_config = {"temperature": 0.4}
-                    model = genai.GenerativeModel("gemini-2.0-flash", generation_config=generation_config)
+                progress_bar = st.progress(0)
+                status_text = st.empty()
 
-                    for uploaded_file in uploaded_files:
-                        if (uploaded_file.size / (1024 * 1024)) > MAX_FILE_SIZE_MB:
-                            continue
+                generation_config = {"temperature": 0.5}
+                model = genai.GenerativeModel("gemini-2.0-flash", generation_config=generation_config)
 
-                        try:
-                            upload_result = cloudinary.uploader.upload(uploaded_file, folder=CLOUDINARY_FOLDER)
-                            image_url = upload_result.get("secure_url")
+                total_files = len(uploaded_files)
+                for i, uploaded_file in enumerate(uploaded_files):
+                    status_text.text(f"Przetwarzam zdjęcie {i+1} z {total_files}...")
 
-                            caption = "Zuzia 18! 🔥"
-                            success_ai = False
+                    try:
+                        # Automatyczne zmniejszanie/optymalizacja zdjęcia w locie (żeby nie wysyłać 5MB)
+                        image_bytes = uploaded_file.getvalue()
+                        img = Image.open(BytesIO(image_bytes))
+                        if img.mode in ("RGBA", "P"):
+                            img = img.convert("RGB")
 
-                            for attempt in range(3):
-                                try:
-                                    image_bytes = uploaded_file.getvalue()
-                                    image_obj = Image.open(BytesIO(image_bytes))
+                        # Zmniejszenie do max 1600px szerokości dla szybkiego przesyłu
+                        img.thumbnail((1600, 1600))
 
-                                    random_seed_tag = str(time.time() + random.random())
-                                    prompt = (
-                                        f"[ID: {random_seed_tag}] "
-                                        "Twoim zadaniem jest opisać dokładnie to, co widzisz na tym konkretnym zdjęciu, "
-                                        "i skomentować to w 1-2 krótkich zdaniach z emoji. "
-                                        "Zasady absolutne: "
-                                        "1. Musisz odnieść się do faktycznych szczegółów z tego zdjęcia (kto na nim jest, co robi, jakie ma ubranie, jaką minę, co trzyma w ręku lub co jest w tle). "
-                                        "2. Zabrania się wymyślania sytuacji, których nie ma na zdjęciu. "
-                                        "3. Bądź złośliwy, dowcipny i dosłowny. "
-                                        "Zwróć absolutnie tylko sam tekst podpisu, bez żadnych cudzysłowów i znaczników."
-                                    )
+                        byte_arr = BytesIO()
+                        img.save(byte_arr, format='JPEG', quality=85)
+                        byte_arr.seek(0)
 
-                                    response = model.generate_content([prompt, image_obj])
-                                    if response and hasattr(response, "text") and response.text:
-                                        caption = response.text.strip().replace('"', '').replace("'", "")
-                                        success_ai = True
-                                        break
-                                except Exception:
-                                    time.sleep(2)
+                        # Wysyłka zoptymalizowanego zdjęcia do Cloudinary
+                        upload_result = cloudinary.uploader.upload(byte_arr, folder=CLOUDINARY_FOLDER)
+                        image_url = upload_result.get("secure_url")
 
-                            if not success_ai:
-                                dynamic_fallbacks = [
-                                    "Kto wpadł na ten pomysł? Dowody zostaną zniszczone! 📸",
-                                    "Stylówa za miliony, tego nie da się odzobaczyć! 💀",
-                                    "Oficjalnie najlepszy moment imprezy Zuzi! 🥂",
-                                    "Klimat gęsty można kroić nożem! 🔥",
-                                    "Tego zdjęcia miało tu nie być! 🤫"
-                                ]
-                                caption = random.choice(dynamic_fallbacks)
+                        if not image_url:
+                            continue  # Jeśli nie ma URL, pomijamy, żeby nie wrzucić pustego wpisu
 
-                            save_item(image_url, caption)
-                        except Exception as e:
-                            st.error(f"Błąd wysyłki: {e}")
+                        caption = "18-ka Zuzi! 🔥"
+                        success_ai = False
 
-                    st.success("Wszystkie zdjęcia wysłane i przeanalizowane!")
-                    st.session_state.uploader_key += 1
-                    time.sleep(1)
-                    st.rerun()
+                        for attempt in range(3):
+                            try:
+                                random_seed_tag = str(time.time() + random.random())
+                                prompt = (
+                                    f"[ID: {random_seed_tag}] "
+                                    "Obejrzyj dokładnie to zdjęcie i napisz 1 krótkie, złośliwe, ironiczne zdanie po polsku z emoji, "
+                                    "komentujące to, co faktycznie widzisz na tym obrazku (ludzi, sytuację, ubiór). "
+                                    "Zwróć absolutnie tylko sam tekst podpisu, bez cudzysłowów."
+                                )
+
+                                response = model.generate_content([prompt, img])
+                                if response and hasattr(response, "text") and response.text:
+                                    caption = response.text.strip().replace('"', '').replace("'", "")
+                                    success_ai = True
+                                    break
+                            except Exception:
+                                time.sleep(1)
+
+                        if not success_ai:
+                            dynamic_fallbacks = [
+                                "Kto wpadł na ten pomysł? Dowody zostaną zniszczone! 📸",
+                                "Stylówa za miliony, tego nie da się odzobaczyć! 💀",
+                                "Oficjalnie najlepszy moment imprezy Zuzi! 🥂",
+                                "Klimat gęsty można kroić nożem! 🔥"
+                            ]
+                            caption = random.choice(dynamic_fallbacks)
+
+                        save_item(image_url, caption)
+                    except Exception as e:
+                        st.error(f"Błąd przy zdjęciu {i+1}: {e}")
+
+                    progress_bar.progress((i + 1) / total_files)
+
+                status_text.text("Gotowe! Wszystkie zdjęcia wgrane i przeanalizowane.")
+                time.sleep(1)
+                st.session_state.uploader_key += 1
+                st.rerun()
 else:
     st.title("Ekran Projektora / Pokaz na Zywo")
 
-    st_autorefresh(interval=2000, key="dj_autorefresh")
+    st_autorefresh(interval=3000, key="dj_autorefresh")
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Zarzadzanie pojedynczymi zdjeciami")
@@ -236,4 +249,7 @@ else:
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc coś ze swojego telefonu.")
+
+
+
 
