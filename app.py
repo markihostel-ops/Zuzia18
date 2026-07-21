@@ -115,6 +115,9 @@ if "current_index" not in st.session_state:
 if "last_slide_time" not in st.session_state:
     st.session_state.last_slide_time = time.time()
 
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
+
 if view_mode == "Wgraj Zdjecie (Goscie)":
     st.title("18. Urodziny Zuzi")
     st.header("Wrzuc fotki na zywo na ekran projektora!")
@@ -125,13 +128,15 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
         uploaded_files = st.file_uploader(
             "Wybierz zdjecia z telefonu:",
             type=["jpg", "jpeg", "png"],
-            accept_multiple_files=True
+            accept_multiple_files=True,
+            key=f"uploader_{st.session_state.uploader_key}"
         )
 
         if uploaded_files:
             if st.button("Wyslij zdjecia do pokazu"):
                 with st.spinner("Analizuję zdjęcia przez AI i generuję unikalne teksty..."):
-                    model = genai.GenerativeModel("gemini-2.0-flash")
+                    generation_config = {"temperature": 0.4}
+                    model = genai.GenerativeModel("gemini-2.0-flash", generation_config=generation_config)
 
                     for uploaded_file in uploaded_files:
                         if (uploaded_file.size / (1024 * 1024)) > MAX_FILE_SIZE_MB:
@@ -149,11 +154,15 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                                     image_bytes = uploaded_file.getvalue()
                                     image_obj = Image.open(BytesIO(image_bytes))
 
+                                    random_seed_tag = str(time.time() + random.random())
                                     prompt = (
-                                        "Jesteś bezczelnym, ostrym i zabawnym komikiem na 18. urodzinach Zuzi. "
-                                        "Obejrzyj dokładnie to konkretne zdjęcie i wymyśl na jego temat krótki, "
-                                        "ironiczny lub bardzo śmieszny komentarz po polsku (maksymalnie 1-2 zdania z emoji), "
-                                        "nawiązujący bezpośrednio do tego, co widzisz na tym zdjęciu (ludzi, przedmiotów, sytuacji). "
+                                        f"[ID: {random_seed_tag}] "
+                                        "Twoim zadaniem jest opisać dokładnie to, co widzisz na tym konkretnym zdjęciu, "
+                                        "i skomentować to w 1-2 krótkich zdaniach z emoji. "
+                                        "Zasady absolutne: "
+                                        "1. Musisz odnieść się do faktycznych szczegółów z tego zdjęcia (kto na nim jest, co robi, jakie ma ubranie, jaką minę, co trzyma w ręku lub co jest w tle). "
+                                        "2. Zabrania się wymyślania sytuacji, których nie ma na zdjęciu. "
+                                        "3. Bądź złośliwy, dowcipny i dosłowny. "
                                         "Zwróć absolutnie tylko sam tekst podpisu, bez żadnych cudzysłowów i znaczników."
                                     )
 
@@ -170,7 +179,8 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                                     "Kto wpadł na ten pomysł? Dowody zostaną zniszczone! 📸",
                                     "Stylówa za miliony, tego nie da się odzobaczyć! 💀",
                                     "Oficjalnie najlepszy moment imprezy Zuzi! 🥂",
-                                    "Klimat gęsty można kroić nożem! 🔥"
+                                    "Klimat gęsty można kroić nożem! 🔥",
+                                    "Tego zdjęcia miało tu nie być! 🤫"
                                 ]
                                 caption = random.choice(dynamic_fallbacks)
 
@@ -179,6 +189,9 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                             st.error(f"Błąd wysyłki: {e}")
 
                     st.success("Wszystkie zdjęcia wysłane i przeanalizowane!")
+                    st.session_state.uploader_key += 1
+                    time.sleep(1)
+                    st.rerun()
 else:
     st.title("Ekran Projektora / Pokaz na Zywo")
 
@@ -223,3 +236,4 @@ else:
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc coś ze swojego telefonu.")
+
