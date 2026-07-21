@@ -55,7 +55,7 @@ def load_gallery():
                 for line in f:
                     if "|" in line:
                         parts = line.strip().split("|", 1)
-                        if parts[0].startswith("http"):  # Sprawdzamy czy URL jest poprawny
+                        if parts[0].startswith("http"):
                             items.append({"url": parts[0], "caption": parts[1]})
     except Exception:
         pass
@@ -137,63 +137,60 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
-                generation_config = {"temperature": 0.5}
+                # Wysoka temperatura i model flash do błyskawicznej, żywej analizy
+                generation_config = {"temperature": 1.0}
                 model = genai.GenerativeModel("gemini-2.0-flash", generation_config=generation_config)
 
                 total_files = len(uploaded_files)
                 for i, uploaded_file in enumerate(uploaded_files):
-                    status_text.text(f"Przetwarzam zdjęcie {i+1} z {total_files}...")
+                    status_text.text(f"Analizuję zdjęcie {i+1} z {total_files}...")
 
                     try:
-                        # Automatyczne zmniejszanie/optymalizacja zdjęcia w locie (żeby nie wysyłać 5MB)
                         image_bytes = uploaded_file.getvalue()
                         img = Image.open(BytesIO(image_bytes))
                         if img.mode in ("RGBA", "P"):
                             img = img.convert("RGB")
 
-                        # Zmniejszenie do max 1600px szerokości dla szybkiego przesyłu
                         img.thumbnail((1600, 1600))
 
                         byte_arr = BytesIO()
                         img.save(byte_arr, format='JPEG', quality=85)
                         byte_arr.seek(0)
 
-                        # Wysyłka zoptymalizowanego zdjęcia do Cloudinary
                         upload_result = cloudinary.uploader.upload(byte_arr, folder=CLOUDINARY_FOLDER)
                         image_url = upload_result.get("secure_url")
 
                         if not image_url:
-                            continue  # Jeśli nie ma URL, pomijamy, żeby nie wrzucić pustego wpisu
+                            continue
 
-                        caption = "18-ka Zuzi! 🔥"
+                        caption = "Zuzia 18! 🔥"
                         success_ai = False
 
                         for attempt in range(3):
                             try:
-                                random_seed_tag = str(time.time() + random.random())
+                                unique_seed = str(time.time() + random.random())
+                                # Bardzo restrykcyjny prompt wymuszający bezpośredni opis tego, co widać na zdjęciu
                                 prompt = (
-                                    f"[ID: {random_seed_tag}] "
-                                    "Obejrzyj dokładnie to zdjęcie i napisz 1 krótkie, złośliwe, ironiczne zdanie po polsku z emoji, "
-                                    "komentujące to, co faktycznie widzisz na tym obrazku (ludzi, sytuację, ubiór). "
-                                    "Zwróć absolutnie tylko sam tekst podpisu, bez cudzysłowów."
+                                    f"[ID: {unique_seed}] "
+                                    "Jesteś bezczelnym komikiem na 18. urodzinach. Spójrz na to zdjęcie i NAPISZ CO NA NIM WIDZISZ, "
+                                    "odnosząc się bezpośrednio do szczegółów (kolor sukienki/ubrania, co ktoś trzyma, jaka jest mina, poza lub rekwizyt). "
+                                    "Skomentuj to złośliwie w 1-2 krótkich zdaniach z emoji. "
+                                    "ZAKAZ używania ogólnikowych fraz o 'imprezie' czy 'klimacie' – masz opisać to konkretne ujęcie! "
+                                    "Zwróć absolutnie tylko sam tekst podpisu, bez żadnych cudzysłowów."
                                 )
 
                                 response = model.generate_content([prompt, img])
                                 if response and hasattr(response, "text") and response.text:
-                                    caption = response.text.strip().replace('"', '').replace("'", "")
-                                    success_ai = True
-                                    break
+                                    text_resp = response.text.strip().replace('"', '').replace("'", "")
+                                    if len(text_resp) > 5:
+                                        caption = text_resp
+                                        success_ai = True
+                                        break
                             except Exception:
                                 time.sleep(1)
 
                         if not success_ai:
-                            dynamic_fallbacks = [
-                                "Kto wpadł na ten pomysł? Dowody zostaną zniszczone! 📸",
-                                "Stylówa za miliony, tego nie da się odzobaczyć! 💀",
-                                "Oficjalnie najlepszy moment imprezy Zuzi! 🥂",
-                                "Klimat gęsty można kroić nożem! 🔥"
-                            ]
-                            caption = random.choice(dynamic_fallbacks)
+                            caption = "Ale akcja na tym zdjęciu! 📸🔥"
 
                         save_item(image_url, caption)
                     except Exception as e:
@@ -201,7 +198,7 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
 
                     progress_bar.progress((i + 1) / total_files)
 
-                status_text.text("Gotowe! Wszystkie zdjęcia wgrane i przeanalizowane.")
+                status_text.text("Gotowe! Zdjęcia trafiły na ekran.")
                 time.sleep(1)
                 st.session_state.uploader_key += 1
                 st.rerun()
@@ -249,7 +246,3 @@ else:
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc coś ze swojego telefonu.")
-
-
-
-
