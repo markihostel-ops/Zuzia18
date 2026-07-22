@@ -1,7 +1,6 @@
 import os
 import time
 import base64
-import random
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
 
@@ -36,8 +35,6 @@ if cloud_name and cloudinary_key and cloudinary_secret:
 
 DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
-QUEUE_FILE = "guest_queue.txt"
-QUEUE_LOCK = "guest_queue.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
 PLACEHOLDER_CAPTION = "Zaraz skomentuje... 👀"
 MAX_PHOTOS = 10
@@ -46,103 +43,28 @@ AI_TIMEOUT_SEC = 55
 
 AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
-ALL_GUESTS = [
-    "Zuzia B (solenizantka, 18 lat)",
-    "Kinga (mama Zuzi B)",
-    "Krzysiek (tata Zuzi B)",
-    "Bartek (brat Zuzi B)",
-    "Werka (dziewczyna Bartka)",
-    "Babcia Hania",
-    "Dziadek Kazik",
-    "Karolcia (ciocia Zuzi B)",
-    "Patryk (wujek, maz Karolci)",
-    "Rafal (wujek Zuzi B)",
-    "Juda (ciocia, zona Rafala)",
-    "Nikola (corka Rafala i Judy)",
-    "Kacper (chlopak Nikoli)",
-    "Daniel K (syn Rafala i Judy)",
-    "Julia (zona Daniela K)",
-    "Babcia Malgosia",
-    "Mariusz (wujek Zuzi B)",
-    "Eliza (ciotka, zona Mariusza)",
-    "Natalia (corka Mariusza i Elizy)",
-    "Dawid (maz Natalii)",
-    "Ola (corka Mariusza i Elizy)",
-    "Sebastian (maz Oli)",
-    "Aga (ciocia Zuzi B)",
-    "Radek (wujek, maz Agi)",
-    "Ilona (przyjaciolka rodziny)",
-    "Czarek (przyjaciel rodziny, maz Ilony)",
-    "Antek (syn Ilony i Czarka)",
-    "Klaudia (corka Ilony i Czarka)",
-    "Hubert (chlopak Klaudii)",
-    "Iwona (przyjaciolka rodziny)",
-    "Robert (przyjaciel rodziny, maz Iwony)",
-    "Kamil (syn Iwony i Roberta)",
-    "Karolina (dziewczyna Kamila)",
-    "Olek (syn Iwony i Roberta)",
-    "Agata (dziewczyna Olka)",
-    "Wioletta (mama Zuzi M)",
-    "Marcin (tata Zuzi M)",
-    "Zuzia M (najlepsza przyjaciolka Zuzi B)",
-    "Oksana (przyjaciolka rodziny)",
-    "Marlena (przyjaciolka rodziny)",
-    "Daniel (przyjaciel rodziny)",
-    "Pati (przyjaciolka rodziny)",
-]
 
 
-def get_next_guest() -> str:
-    lock = FileLock(QUEUE_LOCK)
-    with lock:
-        queue = []
-        if os.path.exists(QUEUE_FILE):
-            try:
-                with open(QUEUE_FILE, "r", encoding="utf-8") as f:
-                    queue = [line.strip() for line in f if line.strip()]
-            except Exception:
-                queue = []
-        if not queue:
-            queue = ALL_GUESTS.copy()
-            random.shuffle(queue)
-        guest = queue.pop(0)
-        try:
-            with open(QUEUE_FILE, "w", encoding="utf-8") as f:
-                for item in queue:
-                    f.write(f"{item}\n")
-        except Exception:
-            pass
-    return guest
+def get_prompt() -> str:
+    return """Jestes mistrzem ceremonii na 18. urodzinach Zuzi B.
+Napisz JEDEN krotki, mega smieszny komentarz do tego zdjecia z imprezy.
 
+ZASADY:
+1. Maksymalnie 1 zdanie + 1-2 emoji. Nie wiecej niz 90 znakow lacznie.
+2. Styl: imprezowy, zabawny, lekko zlośliwy ale nigdy obrazliwy.
+3. Komentuj to co WIDZISZ na zdjeciu - sytuacje, miny, gesty, nastroj.
+4. NIE uzywaj zadnych imion - ani gosci ani nikogo innego.
+5. Pisz po polsku.
+6. Zwroc TYLKO tekst komentarza. Zero wstepow, zero cudzyslowow, zero gwiazdek.
 
-def get_prompt(guest: str) -> str:
-    imie = guest.split("(")[0].strip().split()[0]
-    return f"""Jestes dowcipnym konferansjerem na 18. urodzinach Zuzi B.
-Napisz JEDEN smieszny komentarz do zdjecia z imprezy.
+PRZYKLADY DOBREGO STYLU:
+- "Ktos tu udaje ze nie tańczy, ale nogi same sie ruszaja 🕺"
+- "Oficjalnie najlepsza impreza roku, nieoficjalnie buty juz dawno pod stolem 👠"
+- "Ten toast to juz chyba piaty z kolei, ale kto liczy 🥂"
+- "Mina mowi wszystko — impreza wchodzi w najlepsza faze 🔥"
+- "Cos sie tu dzieje i to cos jest bardzo dobre 😂"
 
-IMIE DO WPLECENIA: {imie}
-
-ZELAZNA ZASADA KTOREJ NIE WOLNO LAMAC:
-Nie wiesz kto jest na zdjeciu. Moze to byc ktokolwiek.
-Dlatego komentarz MUSI byc zbudowany tak:
-- NAJPIERW opisz sytuacje ze zdjecia (co sie dzieje, jaki nastroj, co widac)
-- POTEM dodaj zdanie gdzie {imie} pojawia sie jako ktos kto jest GDZIE INDZIEJ lub cos MOWI Z BOKU
-
-IMIE NIGDY nie moze byc podmiotem opisujacym osobe ze zdjecia.
-IMIE moze byc tylko w zdaniu gdzie ta osoba jest poza kadrem.
-
-WZORCE ZDANIA Z IMIENIEM:
-- "...a {imie} podobno dopiero szuka miejsca do siedzenia"
-- "...{imie} twierdzi ze to nie on/ona zaczal/a"
-- "...podobno {imie} juz zamawia nastepna kolejke"
-- "...{imie} z boku juz klaszcze"
-
-PRZYKLAD PELNEGO KOMENTARZA:
-Zdjecie: ktos tanczy
-DOBRZE: "Parkiet sie trzasie w posadach, a {imie} podobno dopiero sciaga buty zeby dolaczyc 🕺"
-ZLE: "{imie} tak swietnie tanczy" albo "{imie} wyglada na rozbawionego"
-
-Bez cudzyslowow i gwiazdek. Tylko gotowy tekst."""
+Komentarz:"""
 
 
 def fix_image_orientation(img: Image.Image) -> Image.Image:
@@ -295,8 +217,7 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
     start = time.time()
     image_bytes_ai = compress_for_ai(img_pil)
     image_b64 = base64.standard_b64encode(image_bytes_ai).decode("utf-8")
-    guest = get_next_guest()
-    prompt = get_prompt(guest)
+    prompt = get_prompt()
     for attempt in range(3):
         if time.time() - start > AI_TIMEOUT_SEC:
             break
