@@ -2,6 +2,7 @@ import os
 import time
 import base64
 import threading
+import random
 from io import BytesIO
 
 from PIL import Image
@@ -30,20 +31,23 @@ if cloud_name and cloudinary_key and cloudinary_secret:
 DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
-PENDING_FILE = "pending_captions.txt"
-PENDING_LOCK = "pending.lock"
+PLACEHOLDER_CAPTION = "Zaraz skomentuje... 👀"
 
-PROMPT_WITH_IMAGE = (
+# Co trzecie zdjecie bedzie z wzmianką o Zuzi
+PROMPT_BEZ_ZUZI = (
     "Jestes rozbawionym gosciem na 18. urodzinach Zuzi. "
     "Napisz krotki zabawny komentarz do tego zdjecia. Max 2 zdania i emoji. "
-    "Nie uzywaj cudzyslowow ani gwiazdek."
+    "Nie uzywaj cudzyslowow ani gwiazdek. Nie wspominaj o Zuzi."
 )
 
-PLACEHOLDER_CAPTION = "Zaraz skomentuje... 👀"
+PROMPT_Z_ZUZI = (
+    "Jestes rozbawionym gosciem na 18. urodzinach Zuzi. "
+    "Napisz krotki zabawny komentarz do tego zdjecia i skieruj go do Zuzi lub wspomnij o niej. "
+    "Max 2 zdania i emoji. Nie uzywaj cudzyslowow ani gwiazdek."
+)
 
 
 def load_gallery():
-    """Wczytuje galerie - najnowsze zdjecia na poczatku."""
     if not os.path.exists(DB_FILE):
         return []
     items = []
@@ -73,7 +77,6 @@ def save_item(url, caption):
 
 
 def update_caption(url, new_caption):
-    """Aktualizuje komentarz dla konkretnego URL w pliku."""
     lock = FileLock(LOCK_FILE)
     try:
         with lock:
@@ -103,10 +106,7 @@ def save_full_gallery(items):
 
 
 def generate_caption_for_url(image_url: str, img_pil: Image.Image):
-    """
-    Generuje komentarz w tle i aktualizuje plik.
-    Uruchamiane w osobnym watku.
-    """
+    """Generuje komentarz w tle. Co trzecie zdjecie wspomina Zuzie."""
     if not anthropic_key:
         return
 
@@ -115,6 +115,9 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
     img_copy.thumbnail((1024, 1024), Image.LANCZOS)
     img_copy.save(buf, format="JPEG", quality=80)
     image_b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
+
+    # Losowo - 1 na 3 szanse ze pojawi sie wzmianka o Zuzi
+    prompt = PROMPT_Z_ZUZI if random.randint(1, 3) == 1 else PROMPT_BEZ_ZUZI
 
     for attempt in range(3):
         try:
@@ -136,7 +139,7 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
                             },
                             {
                                 "type": "text",
-                                "text": PROMPT_WITH_IMAGE,
+                                "text": prompt,
                             },
                         ],
                     }
@@ -150,7 +153,6 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
         except Exception:
             time.sleep(2)
 
-    # Jesli wszystkie proby zawiodly - zostaw placeholder zastepczy
     update_caption(image_url, "Zuzia i ekipa daja czadu! 🎉🔥")
 
 
@@ -230,7 +232,6 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         if img.mode in ("RGBA", "P", "CMYK"):
                             img = img.convert("RGB")
 
-                        # Wgraj oryginał do Cloudinary
                         upload_buf = BytesIO()
                         img.save(upload_buf, format="JPEG", quality=92)
                         upload_buf.seek(0)
@@ -245,10 +246,8 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                             progress_bar.progress((i + 1) / total_files)
                             continue
 
-                        # Zapisz od razu z placeholderem - zdjecie pojawia sie natychmiast
                         save_item(image_url, PLACEHOLDER_CAPTION)
 
-                        # Uruchom komentowanie w tle (osobny watek)
                         t = threading.Thread(
                             target=generate_caption_for_url,
                             args=(image_url, img.copy()),
@@ -278,7 +277,6 @@ else:
     items = load_gallery()
     current_count = len(items)
 
-    # Jesli pojawily sie nowe zdjecia - wróc na poczatek
     if current_count > st.session_state.last_known_count:
         st.session_state.current_index = 0
         st.session_state.last_known_count = current_count
@@ -324,20 +322,15 @@ else:
             unsafe_allow_html=True,
         )
 
-        # Prefetch kolejnego zdjecia
         next_idx = (idx + 1) % len(items)
         next_url = items[next_idx]["url"].replace("/upload/", "/upload/w_1200,q_auto,f_auto/")
-        st.markdown(
-            f'<link rel="prefetch" href="{next_url}">',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'<link rel="prefetch" href="{next_url}">', unsafe_allow_html=True)
 
         col1, col2, col3 = st.columns([0.5, 5, 0.5])
         with col2:
             st.image(display_url, use_container_width=True)
             clean_caption = item["caption"].replace("**", "").replace('"', '').strip()
 
-            # Jesli komentarz jeszcze nie gotowy - pokaz animowany napis
             if clean_caption == PLACEHOLDER_CAPTION:
                 st.markdown(
                     "<h2 style='text-align: center; margin-top: 15px; color: #aaa;'>✍️ Zaraz skomentuje...</h2>",
