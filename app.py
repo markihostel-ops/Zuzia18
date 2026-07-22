@@ -2,6 +2,7 @@ import os
 import time
 import base64
 import threading
+import random
 from io import BytesIO
 
 from PIL import Image, ExifTags
@@ -29,56 +30,140 @@ if cloud_name and cloudinary_key and cloudinary_secret:
 
 DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
+QUEUE_FILE = "guest_queue.txt"
+QUEUE_LOCK = "guest_queue.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
 PLACEHOLDER_CAPTION = "Zaraz skomentuje... 👀"
 
-PROMPT_WITH_IMAGE = """Jesteś dowcipnym konferansjerem na 18. urodzinach Zuzi B.
-Masz dostęp do listy gości i ich relacji – używaj jej do tworzenia śmiesznych, trafnych komentarzy pod zdjęciami z imprezy.
+ALL_GUESTS = [
+    "Zuzia B (solenizantka, 18 lat)",
+    "Kinga (mama Zuzi B)",
+    "Krzysiek (tata Zuzi B)",
+    "Bartek (brat Zuzi B)",
+    "Werka (dziewczyna Bartka)",
+    "Babcia Hania",
+    "Dziadek Kazik",
+    "Karolcia (ciocia Zuzi B)",
+    "Patryk (wujek, mąż Karolci)",
+    "Rafał (wujek Zuzi B)",
+    "Juda (ciocia, żona Rafała)",
+    "Nikola (córka Rafała i Judy)",
+    "Kacper (chłopak Nikoli)",
+    "Daniel K (syn Rafała i Judy)",
+    "Julia (żona Daniela K)",
+    "Babcia Małgosia",
+    "Mariusz (wujek Zuzi B)",
+    "Eliza (ciotka, żona Mariusza)",
+    "Natalia (córka Mariusza i Elizy)",
+    "Dawid (mąż Natalii)",
+    "Ola (córka Mariusza i Elizy)",
+    "Sebastian (mąż Oli)",
+    "Aga (ciocia Zuzi B)",
+    "Radek (wujek, mąż Agi)",
+    "Ilona (przyjaciółka rodziny)",
+    "Czarek (przyjaciel rodziny, mąż Ilony)",
+    "Antek (syn Ilony i Czarka)",
+    "Klaudia (córka Ilony i Czarka)",
+    "Hubert (chłopak Klaudii)",
+    "Iwona (przyjaciółka rodziny)",
+    "Robert (przyjaciel rodziny, mąż Iwony)",
+    "Kamil (syn Iwony i Roberta)",
+    "Karolina (dziewczyna Kamila)",
+    "Olek (syn Iwony i Roberta)",
+    "Agata (dziewczyna Olka)",
+    "Wioletta (mama Zuzi M)",
+    "Marcin (tata Zuzi M)",
+    "Zuzia M (najlepsza przyjaciółka Zuzi B)",
+    "Oksana (przyjaciółka rodziny)",
+    "Marlena (przyjaciółka rodziny)",
+    "Daniel (przyjaciel rodziny)",
+    "Pati (przyjaciółka rodziny)",
+]
 
-LISTA GOŚCI I RELACJE:
-- Zuzia B – solenizantka, kończy 18 lat
-- Kinga (mama Zuzi B) i Krzysiek (tata Zuzi B)
-- Bartek (brat Zuzi B) + jego dziewczyna Werka
-- Zuzia M – najlepsza przyjaciółka Zuzi B, córka Wioletty i Marcina
-- Babcia Hania i Dziadek Kazik – dziadkowie Zuzi B ze strony mamy
-- Karolcia i Patryk – ciocia i wujek Zuzi B (siostra Kingi)
-- Rafał i Juda – wujek i ciocia; ich dzieci: Nikola (z chłopakiem Kacprem) i Daniel K (mąż Julii)
-- Babcia Małgosia – babcia Zuzi B ze strony taty
-- Mariusz i Eliza – wujek i ciotka; ich córki: Natalia (mąż Dawid) i Ola (mąż Sebastian)
-- Aga i Radek – ciocia i wujek Zuzi B
-- Ilona i Czarek – przyjaciele rodziny; dzieci: Antek i Klaudia (chłopak Hubert)
-- Iwona i Robert – przyjaciele rodziny; dzieci: Kamil (z Karoliną) i Olek (z Agatą)
-- Wioletta i Marcin – rodzice Zuzi M
-- Julia – żona Daniela K
-- Kacper – chłopak Nikoli
-- Dawid – mąż Natalii
-- Sebastian – mąż Oli
-- Karolina – dziewczyna Kamila
-- Agata – dziewczyna Olka
-- Hubert – chłopak Klaudii
-- Oksana, Marlena, Daniel, Pati – przyjaciele rodziny
 
-ZASADY TWORZENIA KOMENTARZY:
-1. Napisz dokładnie 1-2 zdania i dodaj 1-2 emoji.
-2. Komentarz ma być śmieszny i ciepły – żart imprezowy, nie złośliwość.
-3. NIE przypisuj konkretnych imion do konkretnych twarzy na zdjęciu – nie wiesz kto jest kto.
-4. Zamiast tego wplataj imiona w żarty ogólne nawiązujące do sytuacji na zdjęciu, np:
+def load_queue() -> list:
+    """Wczytuje kolejkę gości z pliku."""
+    if not os.path.exists(QUEUE_FILE):
+        return []
+    lock = FileLock(QUEUE_LOCK)
+    try:
+        with lock:
+            with open(QUEUE_FILE, "r", encoding="utf-8") as f:
+                return [line.strip() for line in f if line.strip()]
+    except Exception:
+        return []
+
+
+def save_queue(queue: list):
+    """Zapisuje kolejkę gości do pliku."""
+    lock = FileLock(QUEUE_LOCK)
+    try:
+        with lock:
+            with open(QUEUE_FILE, "w", encoding="utf-8") as f:
+                for item in queue:
+                    f.write(f"{item}\n")
+    except Exception:
+        pass
+
+
+def get_next_guest() -> str:
+    """
+    Pobiera następnego gościa z kolejki.
+    Gdy kolejka się wyczerpie, tasuje wszystkich od nowa.
+    Każdy gość pojawi się dokładnie raz przed powtórzeniem.
+    """
+    lock = FileLock(QUEUE_LOCK)
+    with lock:
+        # Wczytaj kolejkę
+        queue = []
+        if os.path.exists(QUEUE_FILE):
+            try:
+                with open(QUEUE_FILE, "r", encoding="utf-8") as f:
+                    queue = [line.strip() for line in f if line.strip()]
+            except Exception:
+                queue = []
+
+        # Jeśli pusta - przetasuj wszystkich gości od nowa
+        if not queue:
+            queue = ALL_GUESTS.copy()
+            random.shuffle(queue)
+
+        # Pobierz pierwszego z kolejki
+        guest = queue.pop(0)
+
+        # Zapisz pozostałą kolejkę
+        try:
+            with open(QUEUE_FILE, "w", encoding="utf-8") as f:
+                for item in queue:
+                    f.write(f"{item}\n")
+        except Exception:
+            pass
+
+    return guest
+
+
+def get_prompt(guest: str) -> str:
+    return f"""Jesteś dowcipnym konferansjerem na 18. urodzinach Zuzi B.
+Napisz JEDEN śmieszny, ciepły komentarz do tego zdjęcia z imprezy.
+
+GOŚĆ DO WSPOMNIENIA W KOMENTARZU: {guest}
+
+ZASADY:
+1. Dokładnie 1-2 zdania + 1-2 emoji.
+2. Wplecione imię ma być naturalne i śmieszne, ale NIE przypisuj go konkretnej twarzy na zdjęciu - nie wiesz kto jest kto.
+3. Opisuj co WIDZISZ na zdjęciu: taniec, toast, śmiech, jedzenie, grupowe zdjęcia itp.
+4. Przykłady dobrego stylu:
    - "Gdzieś tu chyba ukrywa się Radek z drugim talerzem 🍽️"
-   - "Takie tańce to tylko Werka potrafi rozkręcić 💃"
-   - "Babcia Hania patrzy na to wszystko z dumą... albo z niedowierzaniem 😄"
-   - "Sebastian i Dawid już kombinują jak tu dobrze wypaść na zdjęciu 📸"
-   - "Kacper i Hubert udają że nie wiedzą co się dzieje, ale wiemy swoje 😏"
-5. Używaj RÓŻNYCH imion z listy – nie wracaj ciągle do tych samych osób.
-6. NIE zaczynaj każdego komentarza od imienia Zuzi – używaj go maksymalnie raz na 4-5 zdjęć.
-7. Opisuj też to co WIDZISZ na zdjęciu: taniec, toast, śmiech, jedzenie, grupowe zdjęcia itp.
-8. Nie używaj cudzysłowów ani gwiazdek w odpowiedzi.
-9. Zwróć WYŁĄCZNIE gotowy tekst komentarza, bez żadnych wstępów ani wyjaśnień.
+   - "Babcia Hania patrzy na to z dumą... albo z niedowierzaniem 😄"
+   - "Takie ruchy to tylko Werka potrafi rozkręcić na parkiecie 💃"
+   - "Sebastian udaje że nie tańczy, ale nogi same go ponoszą 😏"
+5. Nie używaj cudzysłowów ani gwiazdek.
+6. Zwróć WYŁĄCZNIE gotowy tekst komentarza, zero wstępów.
 
-Napisz teraz komentarz do tego zdjęcia:"""
+Komentarz do zdjęcia:"""
 
 
 def fix_image_orientation(img: Image.Image) -> Image.Image:
-    """Naprawia orientację zdjęcia na podstawie danych EXIF z telefonu."""
     try:
         exif = img._getexif()
         if exif is None:
@@ -89,23 +174,41 @@ def fix_image_orientation(img: Image.Image) -> Image.Image:
         if orientation_key is None or orientation_key not in exif:
             return img
         orientation = exif[orientation_key]
-        if orientation == 2:
-            img = img.transpose(Image.FLIP_LEFT_RIGHT)
-        elif orientation == 3:
-            img = img.rotate(180)
-        elif orientation == 4:
-            img = img.rotate(180).transpose(Image.FLIP_LEFT_RIGHT)
-        elif orientation == 5:
-            img = img.rotate(-90, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
-        elif orientation == 6:
-            img = img.rotate(-90, expand=True)
-        elif orientation == 7:
-            img = img.rotate(90, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
-        elif orientation == 8:
-            img = img.rotate(90, expand=True)
+        rotations = {
+            2: lambda i: i.transpose(Image.FLIP_LEFT_RIGHT),
+            3: lambda i: i.rotate(180),
+            4: lambda i: i.rotate(180).transpose(Image.FLIP_LEFT_RIGHT),
+            5: lambda i: i.rotate(-90, expand=True).transpose(Image.FLIP_LEFT_RIGHT),
+            6: lambda i: i.rotate(-90, expand=True),
+            7: lambda i: i.rotate(90, expand=True).transpose(Image.FLIP_LEFT_RIGHT),
+            8: lambda i: i.rotate(90, expand=True),
+        }
+        if orientation in rotations:
+            img = rotations[orientation](img)
     except Exception:
         pass
     return img
+
+
+def prepare_image(image_bytes: bytes) -> Image.Image:
+    img = Image.open(BytesIO(image_bytes))
+    if img.mode in ("RGBA", "P", "CMYK", "LA"):
+        img = img.convert("RGB")
+    img = fix_image_orientation(img)
+    img.thumbnail((1600, 1600), Image.LANCZOS)
+    return img
+
+
+def compress_to_limit(img: Image.Image, max_kb: int = 600) -> BytesIO:
+    quality = 85
+    while True:
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=quality)
+        if buf.tell() / 1024 <= max_kb or quality <= 45:
+            break
+        quality -= 8
+    buf.seek(0)
+    return buf
 
 
 def load_gallery():
@@ -176,6 +279,9 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
     img_copy.save(buf, format="JPEG", quality=80)
     image_b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
 
+    guest = get_next_guest()
+    prompt = get_prompt(guest)
+
     for attempt in range(3):
         try:
             client = anthropic.Anthropic(api_key=anthropic_key)
@@ -196,7 +302,7 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
                             },
                             {
                                 "type": "text",
-                                "text": PROMPT_WITH_IMAGE,
+                                "text": prompt,
                             },
                         ],
                     }
@@ -230,6 +336,8 @@ if st.sidebar.button("Wyczysc cala galerie", key="btn_wyczysc"):
         with lock:
             if os.path.exists(DB_FILE):
                 os.remove(DB_FILE)
+        if os.path.exists(QUEUE_FILE):
+            os.remove(QUEUE_FILE)
         if cloud_name and cloudinary_key and cloudinary_secret:
             try:
                 resources = cloudinary.api.resources(
@@ -283,28 +391,8 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
 
                     try:
                         image_bytes = uploaded_file.getvalue()
-                        img = Image.open(BytesIO(image_bytes))
-
-                        if img.mode in ("RGBA", "P", "CMYK"):
-                            img = img.convert("RGB")
-
-                        # Napraw orientację na podstawie EXIF (zdjęcia z telefonu)
-                        img = fix_image_orientation(img)
-
-                        # Zmniejsz do max 2048px
-                        img.thumbnail((2048, 2048), Image.LANCZOS)
-
-                        # Zapisz jako JPEG i sprawdź rozmiar - zmniejszaj jakość aż plik < 800KB
-                        quality = 88
-                        while True:
-                            upload_buf = BytesIO()
-                            img.save(upload_buf, format="JPEG", quality=quality)
-                            size_kb = upload_buf.tell() / 1024
-                            if size_kb <= 800 or quality <= 50:
-                                break
-                            quality -= 8
-
-                        upload_buf.seek(0)
+                        img = prepare_image(image_bytes)
+                        upload_buf = compress_to_limit(img, max_kb=600)
 
                         upload_result = cloudinary.uploader.upload(
                             upload_buf, folder=CLOUDINARY_FOLDER
