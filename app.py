@@ -291,11 +291,19 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         # Napraw orientację na podstawie EXIF (zdjęcia z telefonu)
                         img = fix_image_orientation(img)
 
-                        # Zmniejsz do max 2048px - dobra jakość, równy rozmiar dla każdego zdjęcia
+                        # Zmniejsz do max 2048px
                         img.thumbnail((2048, 2048), Image.LANCZOS)
 
-                        upload_buf = BytesIO()
-                        img.save(upload_buf, format="JPEG", quality=88)
+                        # Zapisz jako JPEG i sprawdź rozmiar - zmniejszaj jakość aż plik < 800KB
+                        quality = 88
+                        while True:
+                            upload_buf = BytesIO()
+                            img.save(upload_buf, format="JPEG", quality=quality)
+                            size_kb = upload_buf.tell() / 1024
+                            if size_kb <= 800 or quality <= 50:
+                                break
+                            quality -= 8
+
                         upload_buf.seek(0)
 
                         upload_result = cloudinary.uploader.upload(
