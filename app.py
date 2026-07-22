@@ -1,7 +1,7 @@
+import json
 import os
 import time
 from io import BytesIO
-import base64
 
 from PIL import Image
 import cloudinary
@@ -32,6 +32,7 @@ if gemini_key:
 DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
+DEBUG_LOGS_FOLDER = "debug_logs"
 
 SAFETY_OFF = [
     {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_NONE"},
@@ -103,58 +104,26 @@ def save_full_gallery(items):
         st.error(f"Blad zapisu: {e}")
 
 
-def safe_extract_text(response) -> str:
-    """Wyciąga tekst z odpowiedzi Gemini wszystkimi możliwymi metodami."""
-    # Metoda 1: .text
-    try:
-        t = response.text
-        if t and len(t.strip()) > 3:
-            return t.strip()
-    except Exception:
-        pass
-
-    # Metoda 2: .parts
-    try:
-        for part in response.parts:
-            t = getattr(part, "text", None)
-            if t and len(t.strip()) > 3:
-                return t.strip()
-    except Exception:
-        pass
-
-    # Metoda 3: candidates → content → parts
-    try:
-        for candidate in response.candidates:
-            for part in candidate.content.parts:
-                t = getattr(part, "text", None)
-                if t and len(t.strip()) > 3:
-                    return t.strip()
-    except Exception:
-        pass
-
-    return ""
-
-
 def debug_response(response, label: str, debug: bool):
     """Wyświetla surową strukturę odpowiedzi Gemini jeśli tryb debug włączony."""
     if not debug:
         return
     try:
         st.sidebar.markdown(f"**🔍 DEBUG [{label}]**")
-        st.sidebar.text(f"prompt_feedback: {getattr(response, 'prompt_feedback', 'brak')}")
+        
+        raw_json = json.dumps(response.__dict__, default=lambda o: str(o), ensure_ascii=False)
+        
         try:
-            st.sidebar.text(f".text: {repr(response.text)}")
-        except Exception as e:
-            st.sidebar.text(f".text error: {e}")
-        try:
-            for i, c in enumerate(response.candidates):
-                st.sidebar.text(f"candidate[{i}] finish_reason: {c.finish_reason}")
-                for j, p in enumerate(c.content.parts):
-                    st.sidebar.text(f"  part[{j}].text: {repr(getattr(p, 'text', None))}")
-        except Exception as e:
-            st.sidebar.text(f"candidates error: {e}")
+            os.makedirs(DEBUG_LOGS_FOLDER, exist_ok=True)
+            with open(f"{DEBUG_LOGS_FOLDER}/gemini_{label}.json", "w", encoding="utf-8") as f:
+                f.write(raw_json)
+        except Exception as ex:
+            st.sidebar.error(f"Błąd zapisu logu: {ex}")
+        
+        st.sidebar.json(raw_json)
+        
     except Exception as e:
-        st.sidebar.text(f"debug_response error: {e}")
+        st.sidebar.error(f"debug_response error: {e}")
 
 
 def generate_caption(img_pil: Image.Image, debug: bool = False) -> str:
@@ -186,10 +155,10 @@ def generate_caption(img_pil: Image.Image, debug: bool = False) -> str:
             response = model.generate_content(
                 contents=[{"role": "user", "parts": [image_part, {"text": PROMPT_WITH_IMAGE}]}]
             )
-            debug_response(response, f"obraz próba {attempt+1}", debug)
+            debug_response(response, f"obraz_{attempt+1}", debug)
 
-            text = safe_extract_text(response)
-            if text:
+            text = getattr(response, "text", "")
+            if text and len(text.strip()) > 3:
                 return text.replace('"', '').replace("'", "").strip()
 
             if debug:
@@ -209,10 +178,10 @@ def generate_caption(img_pil: Image.Image, debug: bool = False) -> str:
             response = model.generate_content(
                 contents=[{"role": "user", "parts": [{"text": PROMPT_TEXT_FALLBACK}]}]
             )
-            debug_response(response, f"text fallback próba {attempt+1}", debug)
+            debug_response(response, f"text_{attempt+1}", debug)
 
-            text = safe_extract_text(response)
-            if text:
+            text = getattr(response, "text", "")
+            if text and len(text.strip()) > 3:
                 return text.replace('"', '').replace("'", "").strip()
 
         except Exception as ex:
@@ -383,4 +352,4 @@ else:
                 st.session_state.last_slide_time = now
                 st.rerun()
     else:
-        st.info("Czekamy na pierwsze zdjęcia! Wrzuć coś ze swojego telefonu.")
+        st.info("Czekamy na pierwsze zdjęcia! Wrzuć coś ze
