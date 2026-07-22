@@ -1,12 +1,17 @@
 import os
 import time
 import base64
-import threading
 import random
 from io import BytesIO
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 from PIL import Image, ExifTags
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass
+
 import cloudinary
 import cloudinary.api
 import cloudinary.uploader
@@ -36,6 +41,8 @@ QUEUE_LOCK = "guest_queue.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
 PLACEHOLDER_CAPTION = "Zaraz skomentuje... 👀"
 MAX_PHOTOS = 10
+MAX_CAPTION_LEN = 150
+AI_TIMEOUT_SEC = 55
 
 # Max 5 rownoczesnych zapytan do Claude API
 AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
@@ -87,7 +94,6 @@ ALL_GUESTS = [
 
 
 def get_next_guest() -> str:
-    """Kolejka gosci — kazdy pojawia sie raz zanim lista sie powtorzy."""
     lock = FileLock(QUEUE_LOCK)
     with lock:
         queue = []
@@ -114,21 +120,17 @@ def get_prompt(guest: str) -> str:
     return f"""Jestes dowcipnym konferansjerem na 18. urodzinach Zuzi B.
 Napisz JEDEN smieszny, ciepły komentarz do tego zdjecia z imprezy.
 
-GOSC DO WSPOMNIENIA W KOMENTARZU: {guest}
+GOSC DO WSPOMNIENIA: {guest}
 
 ZASADY:
-1. Dokladnie 1-2 zdania + 1-2 emoji.
-2. Wplecione imie ma byc naturalne i smieszne, ale NIE przypisuj go konkretnej twarzy - nie wiesz kto jest kto.
-3. Opisuj co WIDZISZ na zdjeciu: taniec, toast, smiech, jedzenie, grupowe zdjecia itp.
-4. Przyklady dobrego stylu:
-   - "Gdzies tu chyba ukrywa sie Radek z drugim talerzem"
-   - "Babcia Hania patrzy na to z duma... albo z niedowierzaniem"
-   - "Takie ruchy to tylko Werka potrafi rozkrecic na parkiecie"
-   - "Sebastian udaje ze nie tanczy, ale nogi same go ponoszą"
-5. Nie uzywaj cudzyslowow ani gwiazdek.
-6. Zwroc WYLACZNIE gotowy tekst komentarza, zero wstepow.
-
-Komentarz do zdjecia:"""
+1. Dokladnie 1-2 krotkie zdania + 1-2 emoji. Maksymalnie 150 znakow lacznie.
+2. Wplecione imie naturalne i smieszne, ale NIE przypisuj go konkretnej twarzy.
+3. Opisuj co WIDZISZ na zdjeciu: taniec, toast, smiech, jedzenie itp.
+4. Przyklady:
+   - "Gdzies tu ukrywa sie Radek z drugim talerzem 🍽️"
+   - "Babcia Hania patrzy z duma... albo z niedowierzaniem 😄"
+   - "Takie ruchy to tylko Werka potrafi rozkrecic 💃"
+5. Bez cudzyslowow i gwiazdek. Sam tekst komentarza, zero wstepow."""
 
 
 def fix_image_orientation(img: Image.Image) -> Image.Image:
@@ -175,12 +177,12 @@ def prepare_image(image_bytes: bytes) -> Image.Image:
 
 
 def compress_for_projector(img: Image.Image) -> BytesIO:
-    """1920px, max 800KB — dobra jakosc na projektorze fullHD."""
-    img_resized = resize_to(img, 1920)
+    """1920px max, max 800KB — dobra jakosc na projektorze fullHD."""
+    img_r = resize_to(img, 1920)
     quality = 88
     while True:
         buf = BytesIO()
-        img_resized.save(buf, format="JPEG", quality=quality, optimize=True)
+        img_r.save(buf, format="JPEG", quality=quality, optimize=True)
         if buf.tell() / 1024 <= 800 or quality <= 50:
             break
         quality -= 6
@@ -189,12 +191,12 @@ def compress_for_projector(img: Image.Image) -> BytesIO:
 
 
 def compress_for_ai(img: Image.Image) -> bytes:
-    """800px, max 300KB — wystarczy zeby AI widziala co jest na zdjeciu."""
-    img_resized = resize_to(img, 800)
+    """800px max, max 300KB — wystarczy zeby AI widziala co jest na zdjeciu."""
+    img_r = resize_to(img, 800)
     quality = 80
     while True:
         buf = BytesIO()
-        img_resized.save(buf, format="JPEG", quality=quality, optimize=True)
+        img_r.save(buf, format="JPEG", quality=quality, optimize=True)
         if buf.tell() / 1024 <= 300 or quality <= 40:
             break
         quality -= 6
@@ -231,6 +233,9 @@ def save_item(url, caption):
 
 
 def update_caption(url, new_caption):
+    # Skroc jesli za dlugi
+    if len(new_caption) > MAX_CAPTION_LEN:
+        new_caption = new_caption[:MAX_CAPTION_LEN].rsplit(" ", 1)[0] + "..."
     lock = FileLock(LOCK_FILE)
     try:
         with lock:
@@ -259,19 +264,43 @@ def save_full_gallery(items):
         st.error(f"Blad zapisu: {e}")
 
 
+def upload_to_cloudinary(upload_buf: BytesIO) -> str:
+    """Upload z retry — 3 proby jesli Cloudinary zawiedzie."""
+    for attempt in range(3):
+        try:
+            upload_buf.seek(0)
+            result = cloudinary.uploader.upload(
+                upload_buf, folder=CLOUDINARY_FOLDER
+            )
+            url = result.get("secure_url", "")
+            if url:
+                return url
+        except Exception:
+            time.sleep(1)
+    return ""
+
+
 def generate_caption_for_url(image_url: str, img_pil: Image.Image):
+    """Generuje komentarz AI z timeoutem 55 sekund."""
     if not anthropic_key:
+        update_caption(image_url, "Ekipa bawi sie wysmienicie! 🎉🔥")
         return
+
+    start = time.time()
     image_bytes_ai = compress_for_ai(img_pil)
     image_b64 = base64.standard_b64encode(image_bytes_ai).decode("utf-8")
     guest = get_next_guest()
     prompt = get_prompt(guest)
+
     for attempt in range(3):
+        # Sprawdz timeout
+        if time.time() - start > AI_TIMEOUT_SEC:
+            break
         try:
             client = anthropic.Anthropic(api_key=anthropic_key)
             message = client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=200,
+                max_tokens=150,
                 messages=[
                     {
                         "role": "user",
@@ -296,6 +325,7 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
                 return
         except Exception:
             time.sleep(2)
+
     update_caption(image_url, "Ekipa bawi sie wysmienicie! 🎉🔥")
 
 
@@ -309,30 +339,45 @@ view_mode = st.sidebar.radio(
 )
 st.sidebar.markdown("---")
 
-if st.sidebar.button("Wyczysc cala galerie", key="btn_wyczysc"):
-    try:
-        lock = FileLock(LOCK_FILE)
-        with lock:
-            if os.path.exists(DB_FILE):
-                os.remove(DB_FILE)
-        if os.path.exists(QUEUE_FILE):
-            os.remove(QUEUE_FILE)
-        if cloud_name and cloudinary_key and cloudinary_secret:
-            try:
-                resources = cloudinary.api.resources(
-                    type="upload", prefix=CLOUDINARY_FOLDER, max_results=500
-                )
-                public_ids = [res["public_id"] for res in resources.get("resources", [])]
-                if public_ids:
-                    cloudinary.api.delete_resources(public_ids)
-            except Exception:
-                pass
-        st.sidebar.success("Galeria wyczyszczona!")
-        st.session_state.current_index = 0
-        st.session_state.last_known_count = 0
+# Przycisk czyszczenia z potwierdzeniem
+if "confirm_clear" not in st.session_state:
+    st.session_state.confirm_clear = False
+
+if not st.session_state.confirm_clear:
+    if st.sidebar.button("Wyczysc cala galerie", key="btn_wyczysc"):
+        st.session_state.confirm_clear = True
         st.rerun()
-    except Exception as e:
-        st.sidebar.error(f"Blad: {e}")
+else:
+    st.sidebar.warning("Na pewno chcesz wyczyścić całą galerię?")
+    col_yes, col_no = st.sidebar.columns(2)
+    if col_yes.button("TAK, czysc", key="btn_yes"):
+        try:
+            lock = FileLock(LOCK_FILE)
+            with lock:
+                if os.path.exists(DB_FILE):
+                    os.remove(DB_FILE)
+            if os.path.exists(QUEUE_FILE):
+                os.remove(QUEUE_FILE)
+            if cloud_name and cloudinary_key and cloudinary_secret:
+                try:
+                    resources = cloudinary.api.resources(
+                        type="upload", prefix=CLOUDINARY_FOLDER, max_results=500
+                    )
+                    public_ids = [res["public_id"] for res in resources.get("resources", [])]
+                    if public_ids:
+                        cloudinary.api.delete_resources(public_ids)
+                except Exception:
+                    pass
+            st.sidebar.success("Galeria wyczyszczona!")
+            st.session_state.current_index = 0
+            st.session_state.last_known_count = 0
+        except Exception as e:
+            st.sidebar.error(f"Blad: {e}")
+        st.session_state.confirm_clear = False
+        st.rerun()
+    if col_no.button("NIE, anuluj", key="btn_no"):
+        st.session_state.confirm_clear = False
+        st.rerun()
 
 for key, default in [
     ("current_index", 0),
@@ -362,16 +407,17 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
 
         if uploaded_files:
             if len(uploaded_files) > MAX_PHOTOS:
-                st.error(f"Za duzo zdjec! Wybrales {len(uploaded_files)}, a mozna max {MAX_PHOTOS}. Odznacz kilka i sprobuj ponownie.")
+                st.error(f"Wybrales {len(uploaded_files)} zdjec — za duzo! Odznacz kilka, mozna max {MAX_PHOTOS} na raz.")
                 uploaded_files = None
             else:
                 st.write(f"Wybrano: {len(uploaded_files)} z {MAX_PHOTOS} zdjec")
 
         if uploaded_files:
-            if st.button("Wyslij zdjecia do pokazu", key="btn_wyslij"):
+            if st.button("Wyslij zdjecia do pokazu 🚀", key="btn_wyslij"):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 total_files = len(uploaded_files)
+                success_count = 0
 
                 for i, uploaded_file in enumerate(uploaded_files):
                     status_text.text(f"Wgrywam zdjecie {i + 1} z {total_files}...")
@@ -379,14 +425,10 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         image_bytes = uploaded_file.getvalue()
                         img = prepare_image(image_bytes)
                         upload_buf = compress_for_projector(img)
-
-                        upload_result = cloudinary.uploader.upload(
-                            upload_buf, folder=CLOUDINARY_FOLDER
-                        )
-                        image_url = upload_result.get("secure_url")
+                        image_url = upload_to_cloudinary(upload_buf)
 
                         if not image_url:
-                            st.warning(f"Zdjecie {i + 1}: blad wgrywania.")
+                            st.warning(f"Zdjecie {i + 1}: blad wgrywania, pomijam.")
                             progress_bar.progress((i + 1) / total_files)
                             continue
 
@@ -396,14 +438,19 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                             image_url,
                             img.copy()
                         )
+                        success_count += 1
 
                     except Exception as e:
-                        st.error(f"Blad przy zdjeciu {i + 1}: {e}")
+                        st.warning(f"Zdjecie {i + 1}: blad — {e}")
 
                     progress_bar.progress((i + 1) / total_files)
 
-                status_text.text("Gotowe! Zdjecia sa juz na ekranie, komentarze dochodzą za chwile.")
-                time.sleep(1)
+                if success_count > 0:
+                    status_text.text(f"✅ Gotowe! {success_count} zdjec trafiło na ekran projektora!")
+                else:
+                    status_text.text("❌ Nie udalo sie wgrac zadnego zdjecia. Sprobuj ponownie.")
+
+                time.sleep(2)
                 st.session_state.uploader_key += 1
                 st.rerun()
 
