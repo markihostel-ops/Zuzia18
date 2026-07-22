@@ -261,12 +261,30 @@ else:
         idx = st.session_state.current_index
         item = items[idx]
 
-        st.image(item["url"], use_container_width=True)
+        # DODANY STYL: ograniczenie wysokości zdjęcia, aby komentarz zawsze był widoczny
         st.markdown(
-            f"<h2 style='text-align: center;'>{item['caption']}</h2>",
+            """
+            <style>
+            .stApp img {
+                max-height: 55vh !important;
+                width: auto !important;
+                margin: 0 auto;
+                display: block;
+                object-fit: contain;
+            }
+            </style>
+            """,
             unsafe_allow_html=True,
         )
-        st.caption(f"Zdjecie {idx + 1} z {len(items)}")
+
+        col1, col2, col3 = st.columns([1, 4, 1])
+        with col2:
+            st.image(item["url"], use_container_width=True)
+            st.markdown(
+                f"<h2 style='text-align: center;'>{item['caption']}</h2>",
+                unsafe_allow_html=True,
+            )
+            st.caption(f"Zdjecie {idx + 1} z {len(items)}")
 
         if auto_play and len(items) > 1:
             now = time.time()
