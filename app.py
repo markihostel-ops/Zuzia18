@@ -19,7 +19,6 @@ cloud_name = st.secrets.get("CLOUDINARY_CLOUD_NAME", "")
 cloudinary_key = st.secrets.get("CLOUDINARY_API_KEY", "")
 cloudinary_secret = st.secrets.get("CLOUDINARY_API_SECRET", "")
 
-# DIAGNOSTYKA - pokazuje czy klucze sa widoczne
 st.sidebar.markdown("### Diagnostyka kluczy")
 st.sidebar.write("ANTHROPIC_API_KEY:", "OK" if anthropic_key else "BRAK")
 st.sidebar.write("Dlugosc klucza:", len(anthropic_key))
@@ -38,12 +37,8 @@ LOCK_FILE = "galeria.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
 
 PROMPT_WITH_IMAGE = (
-    "Jestes rozbawionym, lekko zlosliwym gosciem na 18. urodzinach Zuzi. "
-    "Opisz TO KONKRETNE zdjecie w 1-2 krotkich zdaniach: "
-    "co robia osoby, jakie maja miny, co trzymaja, co widac w tle. "
-    "Napisz zabawny, imprezowy komentarz nawiazujacy do konkretnych detali z kadru - "
-    "zlosliwy, ale absolutnie nieobraźliwy, zeby bohaterowie sami sie rozesmiali. "
-    "Dodaj 1-2 emoji. Zwroc WYLACZNIE tekst komentarza, bez cudzyslowow i wstepow."
+    "Jestes rozbawionym gosciem na 18. urodzinach Zuzi. "
+    "Napisz krotki zabawny komentarz do tego zdjecia. Max 2 zdania i emoji."
 )
 
 
@@ -94,44 +89,48 @@ def generate_caption(img_pil: Image.Image) -> str:
     img_pil.save(buf, format="JPEG", quality=85)
     image_b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
 
-    for attempt in range(3):
-        try:
-            client = anthropic.Anthropic(api_key=anthropic_key)
-            message = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=200,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": image_b64,
-                                },
+    try:
+        client = anthropic.Anthropic(api_key=anthropic_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=200,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": image_b64,
                             },
-                            {
-                                "type": "text",
-                                "text": PROMPT_WITH_IMAGE,
-                            },
-                        ],
-                    }
-                ],
-            )
+                        },
+                        {
+                            "type": "text",
+                            "text": PROMPT_WITH_IMAGE,
+                        },
+                    ],
+                }
+            ],
+        )
 
-            text = message.content[0].text.strip()
-            text = text.replace('"', '').replace("'", "").strip()
+        # Pelna diagnostyka odpowiedzi
+        st.sidebar.markdown("### Odpowiedz Claude:")
+        st.sidebar.write("Liczba content blocks:", len(message.content))
+        for i, block in enumerate(message.content):
+            st.sidebar.write(f"Block {i} type:", block.type)
+            if hasattr(block, "text"):
+                st.sidebar.write(f"Block {i} text:", repr(block.text))
 
-            if len(text) > 3:
-                return text
+        text = message.content[0].text.strip()
+        if len(text) > 3:
+            return text
+        return "Za krotka odpowiedz: " + repr(text)
 
-        except Exception as ex:
-            st.sidebar.error(f"Blad Claude proba {attempt+1}: {ex}")
-            time.sleep(1)
-
-    return "Zuzia i ekipa daja czadu! 🎉🔥"
+    except Exception as ex:
+        st.sidebar.error(f"BLAD: {ex}")
+        return f"Blad: {ex}"
 
 
 st.sidebar.title("Panel Sterowania")
