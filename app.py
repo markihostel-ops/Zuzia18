@@ -1,6 +1,7 @@
 import os
 import time
 import base64
+import threading
 from io import BytesIO
 
 from PIL import Image
@@ -29,12 +30,16 @@ if cloud_name and cloudinary_key and cloudinary_secret:
 DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
+PENDING_FILE = "pending_captions.txt"
+PENDING_LOCK = "pending.lock"
 
 PROMPT_WITH_IMAGE = (
     "Jestes rozbawionym gosciem na 18. urodzinach Zuzi. "
     "Napisz krotki zabawny komentarz do tego zdjecia. Max 2 zdania i emoji. "
     "Nie uzywaj cudzyslowow ani gwiazdek."
 )
+
+PLACEHOLDER_CAPTION = "Zaraz skomentuje... 👀"
 
 
 def load_gallery():
@@ -53,7 +58,6 @@ def load_gallery():
                             items.append({"url": parts[0], "caption": parts[1]})
     except Exception:
         pass
-    # Odwracamy kolejnosc - najnowsze na poczatku
     items.reverse()
     return items
 
@@ -68,8 +72,26 @@ def save_item(url, caption):
         st.error(f"Blad zapisu: {e}")
 
 
+def update_caption(url, new_caption):
+    """Aktualizuje komentarz dla konkretnego URL w pliku."""
+    lock = FileLock(LOCK_FILE)
+    try:
+        with lock:
+            if not os.path.exists(DB_FILE):
+                return
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            with open(DB_FILE, "w", encoding="utf-8") as f:
+                for line in lines:
+                    if "|" in line and line.startswith(url):
+                        f.write(f"{url}|{new_caption}\n")
+                    else:
+                        f.write(line)
+    except Exception:
+        pass
+
+
 def save_full_gallery(items):
-    # Przy zapisie odwracamy z powrotem (zapisujemy od najstarszego)
     lock = FileLock(LOCK_FILE)
     try:
         with lock:
@@ -80,9 +102,13 @@ def save_full_gallery(items):
         st.error(f"Blad zapisu: {e}")
 
 
-def generate_caption(img_pil: Image.Image) -> str:
+def generate_caption_for_url(image_url: str, img_pil: Image.Image):
+    """
+    Generuje komentarz w tle i aktualizuje plik.
+    Uruchamiane w osobnym watku.
+    """
     if not anthropic_key:
-        return "BRAK KLUCZA ANTHROPIC"
+        return
 
     buf = BytesIO()
     img_copy = img_pil.copy()
@@ -90,41 +116,42 @@ def generate_caption(img_pil: Image.Image) -> str:
     img_copy.save(buf, format="JPEG", quality=80)
     image_b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
 
-    try:
-        client = anthropic.Anthropic(api_key=anthropic_key)
-        message = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=200,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/jpeg",
-                                "data": image_b64,
+    for attempt in range(3):
+        try:
+            client = anthropic.Anthropic(api_key=anthropic_key)
+            message = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=200,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/jpeg",
+                                    "data": image_b64,
+                                },
                             },
-                        },
-                        {
-                            "type": "text",
-                            "text": PROMPT_WITH_IMAGE,
-                        },
-                    ],
-                }
-            ],
-        )
+                            {
+                                "type": "text",
+                                "text": PROMPT_WITH_IMAGE,
+                            },
+                        ],
+                    }
+                ],
+            )
+            text = message.content[0].text.strip()
+            text = text.replace("**", "").replace('"', '').strip()
+            if len(text) > 3:
+                update_caption(image_url, text)
+                return
+        except Exception:
+            time.sleep(2)
 
-        text = message.content[0].text.strip()
-        text = text.replace("**", "").replace('"', '').strip()
-
-        if len(text) > 3:
-            return text
-        return "Zuzia i ekipa daja czadu! 🎉🔥"
-
-    except Exception:
-        return "Zuzia i ekipa daja czadu! 🎉🔥"
+    # Jesli wszystkie proby zawiodly - zostaw placeholder zastepczy
+    update_caption(image_url, "Zuzia i ekipa daja czadu! 🎉🔥")
 
 
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
@@ -194,7 +221,7 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                 total_files = len(uploaded_files)
 
                 for i, uploaded_file in enumerate(uploaded_files):
-                    status_text.text(f"Analizuje zdjecie {i + 1} z {total_files}...")
+                    status_text.text(f"Wgrywam zdjecie {i + 1} z {total_files}...")
 
                     try:
                         image_bytes = uploaded_file.getvalue()
@@ -203,6 +230,7 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         if img.mode in ("RGBA", "P", "CMYK"):
                             img = img.convert("RGB")
 
+                        # Wgraj oryginał do Cloudinary
                         upload_buf = BytesIO()
                         img.save(upload_buf, format="JPEG", quality=92)
                         upload_buf.seek(0)
@@ -213,19 +241,27 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         image_url = upload_result.get("secure_url")
 
                         if not image_url:
-                            st.warning(f"Zdjecie {i + 1}: blad wgrywania do Cloudinary.")
+                            st.warning(f"Zdjecie {i + 1}: blad wgrywania.")
                             progress_bar.progress((i + 1) / total_files)
                             continue
 
-                        caption = generate_caption(img)
-                        save_item(image_url, caption)
+                        # Zapisz od razu z placeholderem - zdjecie pojawia sie natychmiast
+                        save_item(image_url, PLACEHOLDER_CAPTION)
+
+                        # Uruchom komentowanie w tle (osobny watek)
+                        t = threading.Thread(
+                            target=generate_caption_for_url,
+                            args=(image_url, img.copy()),
+                            daemon=True
+                        )
+                        t.start()
 
                     except Exception as e:
                         st.error(f"Blad przy zdjeciu {i + 1}: {e}")
 
                     progress_bar.progress((i + 1) / total_files)
 
-                status_text.text("Gotowe! Zdjecia trafiły na ekran.")
+                status_text.text("Gotowe! Zdjecia sa juz na ekranie, komentarze dochodzą za chwile.")
                 time.sleep(1)
                 st.session_state.uploader_key += 1
                 st.rerun()
@@ -242,7 +278,7 @@ else:
     items = load_gallery()
     current_count = len(items)
 
-    # Jesli pojawily sie nowe zdjecia - wróc na poczatek (nowe zdjecia)
+    # Jesli pojawily sie nowe zdjecia - wróc na poczatek
     if current_count > st.session_state.last_known_count:
         st.session_state.current_index = 0
         st.session_state.last_known_count = current_count
@@ -270,10 +306,8 @@ else:
         idx = st.session_state.current_index
         item = items[idx]
 
-        # URL zoptymalizowany dla projektora przez Cloudinary
         display_url = item["url"].replace("/upload/", "/upload/w_1200,q_auto,f_auto/")
 
-        # CSS - cache zdjec w przegladarce na wypadek utraty internetu
         st.markdown(
             """
             <style>
@@ -285,13 +319,12 @@ else:
                 object-fit: contain;
                 border-radius: 12px;
             }
-            /* Prefetch kolejnego zdjecia zeby nie bylo przerwy przy zmianie */
             </style>
             """,
             unsafe_allow_html=True,
         )
 
-        # Prefetch kolejnego zdjecia w tle (laduje sie niewidocznie)
+        # Prefetch kolejnego zdjecia
         next_idx = (idx + 1) % len(items)
         next_url = items[next_idx]["url"].replace("/upload/", "/upload/w_1200,q_auto,f_auto/")
         st.markdown(
@@ -303,10 +336,18 @@ else:
         with col2:
             st.image(display_url, use_container_width=True)
             clean_caption = item["caption"].replace("**", "").replace('"', '').strip()
-            st.markdown(
-                f"<h2 style='text-align: center; margin-top: 15px;'>{clean_caption}</h2>",
-                unsafe_allow_html=True,
-            )
+
+            # Jesli komentarz jeszcze nie gotowy - pokaz animowany napis
+            if clean_caption == PLACEHOLDER_CAPTION:
+                st.markdown(
+                    "<h2 style='text-align: center; margin-top: 15px; color: #aaa;'>✍️ Zaraz skomentuje...</h2>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"<h2 style='text-align: center; margin-top: 15px;'>{clean_caption}</h2>",
+                    unsafe_allow_html=True,
+                )
             st.caption(f"Zdjecie {idx + 1} z {len(items)}")
 
         if auto_play and len(items) > 1:
