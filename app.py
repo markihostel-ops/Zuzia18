@@ -188,12 +188,19 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                                 )
                                 
                                 response = model.generate_content([prompt, img])
-                                if response and hasattr(response, "text") and response.text:
-                                    text_resp = response.text.strip().replace('"', '').replace("'", "")
-                                    if len(text_resp) > 3:
-                                        caption = text_resp
-                                        success_ai = True
-                                        break
+                                
+                                if response and hasattr(response, "text"):
+                                    try:
+                                        text_resp = response.text.strip().replace('"', '').replace("'", "")
+                                        if len(text_resp) > 3:
+                                            caption = text_resp
+                                            success_ai = True
+                                            break
+                                    except Exception as inner_e:
+                                        st.error(f"Blokada / brak text: {response.prompt_feedback}")
+                                else:
+                                    st.error("Model zwrócił pustą odpowiedź bez pola text.")
+                                    
                             except Exception as ex:
                                 time.sleep(0.5)
                         
