@@ -1,7 +1,7 @@
 import os
-import random
 import time
 from io import BytesIO
+import base64
 
 from PIL import Image
 import cloudinary
@@ -23,7 +23,7 @@ if cloud_name and cloudinary_key and cloudinary_secret:
     cloudinary.config(
         cloud_name=cloud_name,
         api_key=cloudinary_key,
-        api_secret=cloudinary_secret
+        api_secret=cloudinary_secret,
     )
 
 if gemini_key:
@@ -33,6 +33,36 @@ DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
 
+SAFETY_OFF = [
+    {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH",        "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",  "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT",  "threshold": "BLOCK_NONE"},
+]
+
+GEN_CONFIG = {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 40,
+    "max_output_tokens": 200,
+}
+
+PROMPT_WITH_IMAGE = (
+    "Jesteś rozbawionym, lekko złośliwym gościem na 18. urodzinach Zuzi. "
+    "Opisz TO KONKRETNE zdjęcie w 1–2 krótkich zdaniach: "
+    "co robią osoby, jakie mają miny, co trzymają, co widać w tle. "
+    "Napisz zabawny, imprezowy komentarz nawiązujący do konkretnych detali z kadru — "
+    "złośliwy, ale absolutnie nieobraźliwy, żeby bohaterowie sami się roześmiali. "
+    "Dodaj 1–2 emoji. Zwróć WYŁĄCZNIE tekst komentarza, bez cudzysłowów i wstępów."
+)
+
+PROMPT_TEXT_FALLBACK = (
+    "Napisz jeden krótki, zabawny komentarz imprezowy na 18. urodziny Zuzi. "
+    "Maks 2 zdania, dodaj emoji. Tylko sam tekst, bez cudzysłowów."
+)
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def load_gallery():
     if not os.path.exists(DB_FILE):
@@ -73,19 +103,17 @@ def save_full_gallery(items):
         st.error(f"Blad zapisu: {e}")
 
 
-def extract_text_from_response(response) -> str:
-    """
-    Bezpiecznie wyciąga tekst z obiektu odpowiedzi Gemini,
-    niezależnie od struktury zwróconej przez SDK.
-    """
-    # Metoda 1: bezpośrednie .text
+def safe_extract_text(response) -> str:
+    """Wyciąga tekst z odpowiedzi Gemini wszystkimi możliwymi metodami."""
+    # Metoda 1: .text
     try:
-        if response.text and len(response.text.strip()) > 3:
-            return response.text.strip()
+        t = response.text
+        if t and len(t.strip()) > 3:
+            return t.strip()
     except Exception:
         pass
 
-    # Metoda 2: przez .parts
+    # Metoda 2: .parts
     try:
         for part in response.parts:
             t = getattr(part, "text", None)
@@ -94,7 +122,7 @@ def extract_text_from_response(response) -> str:
     except Exception:
         pass
 
-    # Metoda 3: przez candidates → content → parts
+    # Metoda 3: candidates → content → parts
     try:
         for candidate in response.candidates:
             for part in candidate.content.parts:
@@ -107,84 +135,96 @@ def extract_text_from_response(response) -> str:
     return ""
 
 
-def generate_caption(img_pil: Image.Image) -> str:
+def debug_response(response, label: str, debug: bool):
+    """Wyświetla surową strukturę odpowiedzi Gemini jeśli tryb debug włączony."""
+    if not debug:
+        return
+    try:
+        st.sidebar.markdown(f"**🔍 DEBUG [{label}]**")
+        st.sidebar.text(f"prompt_feedback: {getattr(response, 'prompt_feedback', 'brak')}")
+        try:
+            st.sidebar.text(f".text: {repr(response.text)}")
+        except Exception as e:
+            st.sidebar.text(f".text error: {e}")
+        try:
+            for i, c in enumerate(response.candidates):
+                st.sidebar.text(f"candidate[{i}] finish_reason: {c.finish_reason}")
+                for j, p in enumerate(c.content.parts):
+                    st.sidebar.text(f"  part[{j}].text: {repr(getattr(p, 'text', None))}")
+        except Exception as e:
+            st.sidebar.text(f"candidates error: {e}")
+    except Exception as e:
+        st.sidebar.text(f"debug_response error: {e}")
+
+
+def generate_caption(img_pil: Image.Image, debug: bool = False) -> str:
     """
-    Generuje śmieszny, imprezowy opis zdjęcia przez Gemini.
-    Zwraca tekst opisu lub awaryjny napis jeśli coś pójdzie nie tak.
+    Generuje opis zdjęcia przez Gemini.
+    1. Próba z obrazem (3 razy)
+    2. Fallback: zapytanie tekstowe bez obrazu (2 razy)
+    3. Ostateczny fallback: stały napis
     """
     if not gemini_key:
         return "Impreza u Zuzi w pełnym biegu! 🥂🔥"
 
-    # Przygotuj obraz jako JPEG w pamięci
+    # Przygotuj JPEG bytes
     buf = BytesIO()
     img_pil.save(buf, format="JPEG", quality=85)
     image_bytes = buf.getvalue()
 
-    # Przekaż jako surowe bajty przez genai.types.Part
-    image_part = {
-        "mime_type": "image/jpeg",
-        "data": image_bytes,
-    }
-
-    prompt = (
-        "Jesteś rozbawionym, lekko złośliwym gościem na 18. urodzinach Zuzi. "
-        "Twoje zadanie: opisać TO KONKRETNE zdjęcie w jednym lub dwóch krótkich zdaniach. "
-        "Skoncentruj się wyłącznie na tym, co faktycznie widzisz w kadrze: "
-        "co robią osoby, jakie mają miny, co trzymają w rękach, jakie gesty wykonują, "
-        "gdzie stoją lub siedzą, co dzieje się w tle. "
-        "Napisz żart lub komentarz nawiązujący KONKRETNIE do tych detali — nie pisz ogólników o imprezie. "
-        "Ton: luźny, imprezowy, zabawny, odrobinę złośliwy, ale absolutnie nieobraźliwy — "
-        "tak żeby bohaterowie zdjęcia sami się roześmiali. "
-        "Dodaj 1-2 pasujące emoji. "
-        "Zwróć WYŁĄCZNIE sam tekst komentarza — bez cudzysłowów, bez wstępów, bez wyjaśnień."
-    )
-
-    generation_config = {
-        "temperature": 1.0,
-        "top_p": 0.95,
-        "top_k": 40,
-        "max_output_tokens": 200,
-    }
-    safety_settings = [
-        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-    ]
-
     model = genai.GenerativeModel(
         "gemini-2.0-flash",
-        generation_config=generation_config,
-        safety_settings=safety_settings,
+        generation_config=GEN_CONFIG,
+        safety_settings=SAFETY_OFF,
     )
 
-    last_error = None
+    # ── Krok 1: zapytanie z obrazem ──────────────────────────────────────────
+    image_part = {"mime_type": "image/jpeg", "data": image_bytes}
+
     for attempt in range(3):
         try:
             response = model.generate_content(
-                contents=[
-                    {"role": "user", "parts": [image_part, {"text": prompt}]}
-                ]
+                contents=[{"role": "user", "parts": [image_part, {"text": PROMPT_WITH_IMAGE}]}]
             )
+            debug_response(response, f"obraz próba {attempt+1}", debug)
 
-            text = extract_text_from_response(response)
+            text = safe_extract_text(response)
             if text:
-                # Usuń ewentualne cudzysłowy
-                text = text.replace('"', '').replace("'", "").strip()
-                return text
+                return text.replace('"', '').replace("'", "").strip()
+
+            if debug:
+                st.sidebar.warning(f"Próba {attempt+1}: pusta odpowiedź (obraz)")
 
         except Exception as ex:
-            last_error = ex
+            if debug:
+                st.sidebar.error(f"Próba {attempt+1} exception (obraz): {ex}")
             time.sleep(0.8)
 
-    # Jeśli wszystkie próby się nie powiodły — pokaż błąd w sidebarze dla DJ-a
-    if last_error:
-        st.sidebar.warning(f"Gemini error (zdjęcie): {last_error}")
+    # ── Krok 2: fallback tekstowy (bez obrazu) ───────────────────────────────
+    if debug:
+        st.sidebar.warning("Przechodzę na fallback TEKSTOWY (bez obrazu)...")
 
-    return "Zuzia i ekipa w akcji! 🎉🔥"
+    for attempt in range(2):
+        try:
+            response = model.generate_content(
+                contents=[{"role": "user", "parts": [{"text": PROMPT_TEXT_FALLBACK}]}]
+            )
+            debug_response(response, f"text fallback próba {attempt+1}", debug)
+
+            text = safe_extract_text(response)
+            if text:
+                return text.replace('"', '').replace("'", "").strip()
+
+        except Exception as ex:
+            if debug:
+                st.sidebar.error(f"Text fallback exception: {ex}")
+            time.sleep(0.5)
+
+    # ── Krok 3: absolutny fallback ───────────────────────────────────────────
+    return "Zuzia i ekipa dają czadu! 🎉🔥"
 
 
-# ─── Sidebar ───────────────────────────────────────────────────────────────────
+# ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 st.sidebar.title("Panel Sterowania")
 view_mode = st.sidebar.radio(
@@ -193,13 +233,17 @@ view_mode = st.sidebar.radio(
 )
 
 st.sidebar.markdown("---")
+
+# Tryb debugowania — włącz żeby zobaczyć surowe odpowiedzi Gemini
+debug_mode = st.sidebar.checkbox("🔍 Tryb DEBUG (Gemini)", value=False)
+
+st.sidebar.markdown("---")
 if st.sidebar.button("Wyczysc cala galerie"):
     try:
         lock = FileLock(LOCK_FILE)
         with lock:
             if os.path.exists(DB_FILE):
                 os.remove(DB_FILE)
-
         if cloud_name and cloudinary_key and cloudinary_secret:
             try:
                 resources = cloudinary.api.resources(
@@ -210,7 +254,6 @@ if st.sidebar.button("Wyczysc cala galerie"):
                     cloudinary.api.delete_resources(public_ids)
             except Exception:
                 pass
-
         st.sidebar.success("Galeria wyczyszczona!")
         st.session_state.current_index = 0
         st.rerun()
@@ -219,16 +262,15 @@ if st.sidebar.button("Wyczysc cala galerie"):
 
 # ─── Session state ─────────────────────────────────────────────────────────────
 
-if "current_index" not in st.session_state:
-    st.session_state.current_index = 0
+for key, default in [
+    ("current_index", 0),
+    ("last_slide_time", time.time()),
+    ("uploader_key", 0),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
-if "last_slide_time" not in st.session_state:
-    st.session_state.last_slide_time = time.time()
-
-if "uploader_key" not in st.session_state:
-    st.session_state.uploader_key = 0
-
-# ─── Widok: Wgrywanie zdjęć (goście) ──────────────────────────────────────────
+# ─── Widok: Wgrywanie zdjęć ───────────────────────────────────────────────────
 
 if view_mode == "Wgraj Zdjecie (Goscie)":
     st.title("18. Urodziny Zuzi 🎂")
@@ -260,10 +302,9 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         if img.mode in ("RGBA", "P", "CMYK"):
                             img = img.convert("RGB")
 
-                        # Zachowaj rozsądny rozmiar
                         img.thumbnail((1600, 1600), Image.LANCZOS)
 
-                        # Wgraj oryginał (po przeskalowaniu) do Cloudinary
+                        # Wgraj do Cloudinary
                         upload_buf = BytesIO()
                         img.save(upload_buf, format="JPEG", quality=85)
                         upload_buf.seek(0)
@@ -274,13 +315,16 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         image_url = upload_result.get("secure_url")
 
                         if not image_url:
-                            st.warning(f"Zdjęcie {i + 1}: nie udało się wgrać do Cloudinary.")
+                            st.warning(f"Zdjęcie {i + 1}: błąd wgrywania do Cloudinary.")
                             progress_bar.progress((i + 1) / total_files)
                             continue
 
                         # Generuj opis AI
-                        caption = generate_caption(img)
+                        caption = generate_caption(img, debug=debug_mode)
                         save_item(image_url, caption)
+
+                        if debug_mode:
+                            st.sidebar.success(f"#{i+1} caption: {caption}")
 
                     except Exception as e:
                         st.error(f"Błąd przy zdjęciu {i + 1}: {e}")
@@ -292,15 +336,14 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                 st.session_state.uploader_key += 1
                 st.rerun()
 
-# ─── Widok: Ekran projektora (DJ) ─────────────────────────────────────────────
+# ─── Widok: Projektor (DJ) ────────────────────────────────────────────────────
 
 else:
     st.title("Ekran Projektora / Pokaz na Żywo 🎉")
-
     st_autorefresh(interval=3000, key="dj_autorefresh")
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("Zarządzanie pojedynczymi zdjęciami")
+    st.sidebar.subheader("Zarządzanie zdjęciami")
 
     items = load_gallery()
 
@@ -334,12 +377,10 @@ else:
         st.caption(f"Zdjęcie {idx + 1} z {len(items)}")
 
         if auto_play and len(items) > 1:
-            current_time = time.time()
-            if current_time - st.session_state.last_slide_time >= slide_delay_sec:
-                st.session_state.current_index = (
-                    st.session_state.current_index + 1
-                ) % len(items)
-                st.session_state.last_slide_time = current_time
+            now = time.time()
+            if now - st.session_state.last_slide_time >= slide_delay_sec:
+                st.session_state.current_index = (idx + 1) % len(items)
+                st.session_state.last_slide_time = now
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjęcia! Wrzuć coś ze swojego telefonu.")
