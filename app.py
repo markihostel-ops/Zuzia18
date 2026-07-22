@@ -86,7 +86,10 @@ def generate_caption(img_pil: Image.Image) -> str:
         return "BRAK KLUCZA ANTHROPIC"
 
     buf = BytesIO()
-    img_pil.save(buf, format="JPEG", quality=85)
+    # Claude potrzebuje tylko małego obrazka do analizy - oszczędzamy tokeny
+    img_copy = img_pil.copy()
+    img_copy.thumbnail((1024, 1024), Image.LANCZOS)
+    img_copy.save(buf, format="JPEG", quality=80)
     image_b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
 
     try:
@@ -115,7 +118,6 @@ def generate_caption(img_pil: Image.Image) -> str:
             ],
         )
 
-        # Pelna diagnostyka odpowiedzi
         st.sidebar.markdown("### Odpowiedz Claude:")
         st.sidebar.write("Liczba content blocks:", len(message.content))
         for i, block in enumerate(message.content):
@@ -201,10 +203,9 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         if img.mode in ("RGBA", "P", "CMYK"):
                             img = img.convert("RGB")
 
-                        img.thumbnail((1600, 1600), Image.LANCZOS)
-
+                        # WYSYŁAMY ORYGINAŁ DO CLOUDINARY (wysoka jakość na pamiątkę)
                         upload_buf = BytesIO()
-                        img.save(upload_buf, format="JPEG", quality=85)
+                        img.save(upload_buf, format="JPEG", quality=92)
                         upload_buf.seek(0)
 
                         upload_result = cloudinary.uploader.upload(
@@ -261,7 +262,10 @@ else:
         idx = st.session_state.current_index
         item = items[idx]
 
-        # DODANY STYL: ograniczenie wysokości zdjęcia, aby komentarz zawsze był widoczny
+        # Wersja skompresowana/zmniejszona dla projektora w celu oszczędzania transferu
+        display_url = item["url"].replace("/upload/", "/upload/w_800,q_auto,f_auto/")
+
+        # Style dopasowujące wysokość zdjęcia
         st.markdown(
             """
             <style>
@@ -279,7 +283,7 @@ else:
 
         col1, col2, col3 = st.columns([1, 4, 1])
         with col2:
-            st.image(item["url"], use_container_width=True)
+            st.image(display_url, use_container_width=True)
             st.markdown(
                 f"<h2 style='text-align: center;'>{item['caption']}</h2>",
                 unsafe_allow_html=True,
