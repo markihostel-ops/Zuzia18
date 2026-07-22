@@ -352,4 +352,4 @@ else:
                 st.session_state.last_slide_time = now
                 st.rerun()
     else:
-        st.info("Czekamy na pierwsze zdjęcia! Wrzuć coś ze
+        st.info("Czekamy na pierwsze zdjęcia! Wrzuć coś z telefonu")
