@@ -1,7 +1,7 @@
+import json
 import os
 import time
 from io import BytesIO
-import base64
 
 from PIL import Image
 import cloudinary
@@ -103,56 +103,16 @@ def save_full_gallery(items):
         st.error(f"Blad zapisu: {e}")
 
 
-def safe_extract_text(response) -> str:
-    """Wyciąga tekst z odpowiedzi Gemini wszystkimi możliwymi metodami."""
-    # Metoda 1: .text
-    try:
-        t = response.text
-        if t and len(t.strip()) > 3:
-            return t.strip()
-    except Exception:
-        pass
-
-    # Metoda 2: .parts
-    try:
-        for part in response.parts:
-            t = getattr(part, "text", None)
-            if t and len(t.strip()) > 3:
-                return t.strip()
-    except Exception:
-        pass
-
-    # Metoda 3: candidates → content → parts
-    try:
-        for candidate in response.candidates:
-            for part in candidate.content.parts:
-                t = getattr(part, "text", None)
-                if t and len(t.strip()) > 3:
-                    return t.strip()
-    except Exception:
-        pass
-
-    return ""
-
-
 def debug_response(response, label: str, debug: bool):
     """Wyświetla surową strukturę odpowiedzi Gemini jeśli tryb debug włączony."""
     if not debug:
         return
     try:
         st.sidebar.markdown(f"**🔍 DEBUG [{label}]**")
-        st.sidebar.text(f"prompt_feedback: {getattr(response, 'prompt_feedback', 'brak')}")
         try:
             st.sidebar.text(f".text: {repr(response.text)}")
         except Exception as e:
             st.sidebar.text(f".text error: {e}")
-        try:
-            for i, c in enumerate(response.candidates):
-                st.sidebar.text(f"candidate[{i}] finish_reason: {c.finish_reason}")
-                for j, p in enumerate(c.content.parts):
-                    st.sidebar.text(f"  part[{j}].text: {repr(getattr(p, 'text', None))}")
-        except Exception as e:
-            st.sidebar.text(f"candidates error: {e}")
     except Exception as e:
         st.sidebar.text(f"debug_response error: {e}")
 
@@ -188,12 +148,15 @@ def generate_caption(img_pil: Image.Image, debug: bool = False) -> str:
             )
             debug_response(response, f"obraz próba {attempt+1}", debug)
 
-            text = safe_extract_text(response)
-            if text:
+            text = getattr(response, "text", "")
+            if text and len(text.strip()) > 3:
                 return text.replace('"', '').replace("'", "").strip()
 
             if debug:
                 st.sidebar.warning(f"Próba {attempt+1}: pusta odpowiedź (obraz)")
+
+            raw_json = json.dumps(response.__dict__, default=lambda o: str(o), ensure_ascii=False)
+            st.sidebar.text_area("RAW JSON:", raw_json, height=100)
 
         except Exception as ex:
             if debug:
@@ -211,8 +174,8 @@ def generate_caption(img_pil: Image.Image, debug: bool = False) -> str:
             )
             debug_response(response, f"text fallback próba {attempt+1}", debug)
 
-            text = safe_extract_text(response)
-            if text:
+            text = getattr(response, "text", "")
+            if text and len(text.strip()) > 3:
                 return text.replace('"', '').replace("'", "").strip()
 
         except Exception as ex:
