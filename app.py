@@ -131,12 +131,11 @@ Dlatego komentarz MUSI byc zbudowany tak:
 IMIE NIGDY nie moze byc podmiotem opisujacym osobe ze zdjecia.
 IMIE moze byc tylko w zdaniu gdzie ta osoba jest poza kadrem.
 
-WZORCE ZDANIA Z IMIENIEM (kopiuj ten styl):
-- "...a {imie} podobno dopiero szuka miejsca do siedzenia 😄"
-- "...{imie} twierdzi ze to nie on/ona zaczal/a 😂"
-- "...podobno {imie} juz zamawia nastepna kolejke 🥂"
-- "...(za {imie} mowi ze tak trzeba) 💃"
-- "...{imie} z boku juz klaszcze 👏"
+WZORCE ZDANIA Z IMIENIEM:
+- "...a {imie} podobno dopiero szuka miejsca do siedzenia"
+- "...{imie} twierdzi ze to nie on/ona zaczal/a"
+- "...podobno {imie} juz zamawia nastepna kolejke"
+- "...{imie} z boku juz klaszcze"
 
 PRZYKLAD PELNEGO KOMENTARZA:
 Zdjecie: ktos tanczy
@@ -190,7 +189,6 @@ def prepare_image(image_bytes: bytes) -> Image.Image:
 
 
 def compress_for_projector(img: Image.Image) -> BytesIO:
-    """1920px max, max 800KB — dobra jakosc na projektorze fullHD."""
     img_r = resize_to(img, 1920)
     quality = 88
     while True:
@@ -204,7 +202,6 @@ def compress_for_projector(img: Image.Image) -> BytesIO:
 
 
 def compress_for_ai(img: Image.Image) -> bytes:
-    """800px max, max 300KB — wystarczy zeby AI widziala co na zdjeciu."""
     img_r = resize_to(img, 800)
     quality = 80
     while True:
@@ -295,13 +292,11 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
     if not anthropic_key:
         update_caption(image_url, "Ekipa bawi sie wysmienicie! 🎉🔥")
         return
-
     start = time.time()
     image_bytes_ai = compress_for_ai(img_pil)
     image_b64 = base64.standard_b64encode(image_bytes_ai).decode("utf-8")
     guest = get_next_guest()
     prompt = get_prompt(guest)
-
     for attempt in range(3):
         if time.time() - start > AI_TIMEOUT_SEC:
             break
@@ -334,7 +329,6 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
                 return
         except Exception:
             time.sleep(2)
-
     update_caption(image_url, "Ekipa bawi sie wysmienicie! 🎉🔥")
 
 
@@ -403,8 +397,19 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
     st.header("Wrzuc fotki na zywo na ekran projektora!")
     st.info(f"📸 Wrzucaj maksymalnie {MAX_PHOTOS} zdjec na raz — jak sie wyswietla, mozesz wrzucic kolejne!")
 
-    if not cloud_name or not anthropic_key:
-        st.error("Brak skonfigurowanych kluczy w Streamlit Secrets!")
+    # Sprawdz klucze i pokaz co brakuje
+    brakujace = []
+    if not anthropic_key:
+        brakujace.append("ANTHROPIC_API_KEY")
+    if not cloud_name:
+        brakujace.append("CLOUDINARY_CLOUD_NAME")
+    if not cloudinary_key:
+        brakujace.append("CLOUDINARY_API_KEY")
+    if not cloudinary_secret:
+        brakujace.append("CLOUDINARY_API_SECRET")
+
+    if brakujace:
+        st.error(f"Brak kluczy w Streamlit Secrets: {', '.join(brakujace)}")
     else:
         uploaded_files = st.file_uploader(
             f"Wybierz maksymalnie {MAX_PHOTOS} zdjec z telefonu:",
