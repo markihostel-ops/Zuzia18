@@ -116,20 +116,34 @@ def get_next_guest() -> str:
 
 
 def get_prompt(guest: str) -> str:
+    imie = guest.split("(")[0].strip().split()[0]
     return f"""Jestes dowcipnym konferansjerem na 18. urodzinach Zuzi B.
-Napisz JEDEN smieszny, ciepły komentarz do tego zdjecia z imprezy.
+Napisz JEDEN smieszny komentarz do zdjecia z imprezy.
 
-GOSC DO WSPOMNIENIA: {guest}
+IMIE DO WPLECENIA: {imie}
 
-ZASADY:
-1. Dokladnie 1-2 krotkie zdania + 1-2 emoji. Maksymalnie 150 znakow lacznie.
-2. Wplecione imie naturalne i smieszne, ale NIE przypisuj go konkretnej twarzy.
-3. Opisuj co WIDZISZ na zdjeciu: taniec, toast, smiech, jedzenie itp.
-4. Przyklady:
-   - "Gdzies tu ukrywa sie Radek z drugim talerzem 🍽️"
-   - "Babcia Hania patrzy z duma... albo z niedowierzaniem 😄"
-   - "Takie ruchy to tylko Werka potrafi rozkrecic 💃"
-5. Bez cudzyslowow i gwiazdek. Sam tekst komentarza, zero wstepow."""
+ZELAZNA ZASADA KTOREJ NIE WOLNO LAMAC:
+Nie wiesz kto jest na zdjeciu. Moze to byc ktokolwiek.
+Dlatego komentarz MUSI byc zbudowany tak:
+- NAJPIERW opisz sytuacje ze zdjecia (co sie dzieje, jaki nastroj, co widac)
+- POTEM dodaj zdanie gdzie {imie} pojawia sie jako ktos kto jest GDZIE INDZIEJ lub cos MOWI Z BOKU
+
+IMIE NIGDY nie moze byc podmiotem opisujacym osobe ze zdjecia.
+IMIE moze byc tylko w zdaniu gdzie ta osoba jest poza kadrem.
+
+WZORCE ZDANIA Z IMIENIEM (kopiuj ten styl):
+- "...a {imie} podobno dopiero szuka miejsca do siedzenia 😄"
+- "...{imie} twierdzi ze to nie on/ona zaczal/a 😂"
+- "...podobno {imie} juz zamawia nastepna kolejke 🥂"
+- "...(za {imie} mowi ze tak trzeba) 💃"
+- "...{imie} z boku juz klaszcze 👏"
+
+PRZYKLAD PELNEGO KOMENTARZA:
+Zdjecie: ktos tanczy
+DOBRZE: "Parkiet sie trzasie w posadach, a {imie} podobno dopiero sciaga buty zeby dolaczyc 🕺"
+ZLE: "{imie} tak swietnie tanczy" albo "{imie} wyglada na rozbawionego"
+
+Bez cudzyslowow i gwiazdek. Tylko gotowy tekst."""
 
 
 def fix_image_orientation(img: Image.Image) -> Image.Image:
