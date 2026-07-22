@@ -2,6 +2,7 @@ import os
 import time
 import base64
 from io import BytesIO
+import random
 from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image, ExifTags
@@ -46,34 +47,29 @@ AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 
 def get_prompt() -> str:
-    return """Jestes najzabawniejszym gosciem na 18. urodzinach Zuzi B. Masz ciety jezyk i poczucie humoru jak stand-uper.
+    style = random.choice([
+        "napisz to jak rozbawiony swiadek ktory nie moze uwierzyc w to co widzi",
+        "napisz to jak komentator sportowy relacjonujacy decydujacy moment meczu",
+        "napisz to jakbys czytал mysli osoby na zdjeciu na glos",
+        "napisz to jak babcia ktora pierwszy raz widzi takie rzeczy i jest w szoku",
+        "napisz to jak narrator dokumentu przyrodniczego obserwujacy dzikie zwierzeta",
+        "napisz to jak detektyw ktory wlasnie odkryl dowod zbrodni",
+        "napisz to jak spiker wiadomosci relacjonujacy pilne wydarzenie",
+        "napisz to jak osoba ktora za 10 lat pokaze to zdjecie i sie smiac nie moze",
+    ])
+    return f"""Jestes na 18. urodzinach Zuzi B i komentujesz zdjecia z imprezy.
 
-Napisz JEDEN komentarz do tego zdjecia. Ma byc TAK SMIESZNY ze ludzie na sali parsknа smiechem.
+TWOJ STYL NA TO ZDJECIE: {style}
 
-STYL: zlośliwy ale bez urazy, imprezowy chaos, sarkazm, absurd, przesada — wszystko dozwolone oprocz prawdziwej obrazy.
+ZADANIE: Napisz JEDEN krotki komentarz do tego zdjecia. Max 2 zdania i 1-2 emoji.
 
-TECHNIKI KTORE DZIALAJA:
-- Przesada: "to juz nie impreza, to olimpiada"
-- Obserwacja: opisz dokladnie co widac i dodaj zaskakujaca pointe
-- Kontrast: "mina powazna jak na pogrzebie, impreza najlepsza w zyciu"
-- Absurd: wymysl co ta osoba/osoby mysla lub mowia w tej chwili
-- Puenta zaskakujaca: zacznij normalnie, zakoncz czymś nieoczekiwanym
-
-ZASADY:
-1. Max 1-2 zdania + emoji. Krotko i mocno — dlugie nie sa smieszne.
-2. Komentuj DOKLADNIE to co widzisz — konkretna sytuacja, miny, gesty, ubrania, tlo.
-3. Zero imion.
-4. Po polsku.
-5. Tylko gotowy tekst, bez wstepow.
-
-PRZYKLADY NA POZIOMIE:
-- "Mina jak na przesluchaniu do pracy, impreza jak na finale mistrzostw swiata 🏆😂"
-- "Ktos tu wygladal powazniej niz powinien o tej godzinie 😂🔥"
-- "To zdjecie trafi do historii rodziny na najblizsze 30 lat 📸💀"
-- "Oficjalnie pozuje, nieoficjalnie juz nie czuje nog 🦵😂"
-- "Butelka pusta, serca pelne, jutro bedzie ciezko 🥂💀"
-- "Aparat sklamal — bylo DUZO lepiej niz wyglada 🔥😂"
-- "Ten kadr to gotowy mem, ktos juz go wysyla na WhatsAppa 📱😂"
+WAZNE:
+- Bazuj na TYM CO WIDZISZ na zdjeciu — konkretna sytuacja, emocje, gesty, co sie dzieje
+- Bądz smieszny przez zaskoczenie, absurd lub trafna obserwacje
+- NIE uzywaj imion
+- NIE zaczynaj od slow: "Mina", "Ktos", "Oficjalnie", "To zdjecie"
+- Pisz po polsku
+- Tylko gotowy tekst komentarza, bez wstepow
 
 Komentarz:"""
 
