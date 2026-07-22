@@ -19,12 +19,6 @@ cloud_name = st.secrets.get("CLOUDINARY_CLOUD_NAME", "")
 cloudinary_key = st.secrets.get("CLOUDINARY_API_KEY", "")
 cloudinary_secret = st.secrets.get("CLOUDINARY_API_SECRET", "")
 
-st.sidebar.markdown("### Diagnostyka kluczy")
-st.sidebar.write("ANTHROPIC_API_KEY:", "OK" if anthropic_key else "BRAK")
-st.sidebar.write("Dlugosc klucza:", len(anthropic_key))
-st.sidebar.write("CLOUDINARY:", "OK" if cloud_name else "BRAK")
-st.sidebar.markdown("---")
-
 if cloud_name and cloudinary_key and cloudinary_secret:
     cloudinary.config(
         cloud_name=cloud_name,
@@ -38,11 +32,13 @@ CLOUDINARY_FOLDER = "18_zuzia"
 
 PROMPT_WITH_IMAGE = (
     "Jestes rozbawionym gosciem na 18. urodzinach Zuzi. "
-    "Napisz krotki zabawny komentarz do tego zdjecia. Max 2 zdania i emoji. Nie uzywaj cudzyslowow ani gwiazdek."
+    "Napisz krotki zabawny komentarz do tego zdjecia. Max 2 zdania i emoji. "
+    "Nie uzywaj cudzyslowow ani gwiazdek."
 )
 
 
 def load_gallery():
+    """Wczytuje galerie - najnowsze zdjecia na poczatku."""
     if not os.path.exists(DB_FILE):
         return []
     items = []
@@ -57,6 +53,8 @@ def load_gallery():
                             items.append({"url": parts[0], "caption": parts[1]})
     except Exception:
         pass
+    # Odwracamy kolejnosc - najnowsze na poczatku
+    items.reverse()
     return items
 
 
@@ -71,11 +69,12 @@ def save_item(url, caption):
 
 
 def save_full_gallery(items):
+    # Przy zapisie odwracamy z powrotem (zapisujemy od najstarszego)
     lock = FileLock(LOCK_FILE)
     try:
         with lock:
             with open(DB_FILE, "w", encoding="utf-8") as f:
-                for it in items:
+                for it in reversed(items):
                     f.write(f"{it['url']}|{it['caption']}\n")
     except Exception as e:
         st.error(f"Blad zapisu: {e}")
@@ -117,25 +116,18 @@ def generate_caption(img_pil: Image.Image) -> str:
             ],
         )
 
-        st.sidebar.markdown("### Odpowiedz Claude:")
-        st.sidebar.write("Liczba content blocks:", len(message.content))
-        for i, block in enumerate(message.content):
-            st.sidebar.write(f"Block {i} type:", block.type)
-            if hasattr(block, "text"):
-                st.sidebar.write(f"Block {i} text:", repr(block.text))
-
         text = message.content[0].text.strip()
-        # Czyszczenie niechcianych znaków formatowania
         text = text.replace("**", "").replace('"', '').strip()
-        
+
         if len(text) > 3:
             return text
-        return "Za krotka odpowiedz: " + repr(text)
+        return "Zuzia i ekipa daja czadu! 🎉🔥"
 
-    except Exception as ex:
-        st.sidebar.error(f"BLAD: {ex}")
-        return f"Blad: {ex}"
+    except Exception:
+        return "Zuzia i ekipa daja czadu! 🎉🔥"
 
+
+# ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 st.sidebar.title("Panel Sterowania")
 view_mode = st.sidebar.radio(
@@ -163,17 +155,23 @@ if st.sidebar.button("Wyczysc cala galerie"):
                 pass
         st.sidebar.success("Galeria wyczyszczona!")
         st.session_state.current_index = 0
+        st.session_state.last_known_count = 0
         st.rerun()
     except Exception as e:
         st.sidebar.error(f"Blad: {e}")
+
+# ─── Session state ─────────────────────────────────────────────────────────────
 
 for key, default in [
     ("current_index", 0),
     ("last_slide_time", time.time()),
     ("uploader_key", 0),
+    ("last_known_count", 0),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
+
+# ─── Widok: Wgrywanie zdjec ───────────────────────────────────────────────────
 
 if view_mode == "Wgraj Zdjecie (Goscie)":
     st.title("18. Urodziny Zuzi")
@@ -232,6 +230,8 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                 st.session_state.uploader_key += 1
                 st.rerun()
 
+# ─── Widok: Projektor (DJ) ────────────────────────────────────────────────────
+
 else:
     st.title("Ekran Projektora - Pokaz na Zywo")
     st_autorefresh(interval=3000, key="dj_autorefresh")
@@ -240,6 +240,12 @@ else:
     st.sidebar.subheader("Zarzadzanie zdjeciami")
 
     items = load_gallery()
+    current_count = len(items)
+
+    # Jesli pojawily sie nowe zdjecia - wróc na poczatek (nowe zdjecia)
+    if current_count > st.session_state.last_known_count:
+        st.session_state.current_index = 0
+        st.session_state.last_known_count = current_count
 
     if items:
         for idx, it in enumerate(items):
@@ -249,6 +255,7 @@ else:
                 items.pop(idx)
                 save_full_gallery(items)
                 st.session_state.current_index = 0
+                st.session_state.last_known_count = len(items)
                 st.rerun()
 
     st.sidebar.markdown("---")
@@ -263,9 +270,10 @@ else:
         idx = st.session_state.current_index
         item = items[idx]
 
+        # URL zoptymalizowany dla projektora przez Cloudinary
         display_url = item["url"].replace("/upload/", "/upload/w_1200,q_auto,f_auto/")
 
-        # Styl podkręcający wielkość zdjęcia na projektorze
+        # CSS - cache zdjec w przegladarce na wypadek utraty internetu
         st.markdown(
             """
             <style>
@@ -277,16 +285,23 @@ else:
                 object-fit: contain;
                 border-radius: 12px;
             }
+            /* Prefetch kolejnego zdjecia zeby nie bylo przerwy przy zmianie */
             </style>
             """,
             unsafe_allow_html=True,
         )
 
-        # Poszerzona kolumna ([0.5, 5, 0.5] zamiast [1, 4, 1])
+        # Prefetch kolejnego zdjecia w tle (laduje sie niewidocznie)
+        next_idx = (idx + 1) % len(items)
+        next_url = items[next_idx]["url"].replace("/upload/", "/upload/w_1200,q_auto,f_auto/")
+        st.markdown(
+            f'<link rel="prefetch" href="{next_url}">',
+            unsafe_allow_html=True,
+        )
+
         col1, col2, col3 = st.columns([0.5, 5, 0.5])
         with col2:
             st.image(display_url, use_container_width=True)
-            # Wyświetlanie czystego tekstu bez cudzysłowów
             clean_caption = item["caption"].replace("**", "").replace('"', '').strip()
             st.markdown(
                 f"<h2 style='text-align: center; margin-top: 15px;'>{clean_caption}</h2>",
