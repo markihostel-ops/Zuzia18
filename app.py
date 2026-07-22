@@ -1,11 +1,10 @@
 import base64
-import requests
-import streamlit as st
 import anthropic
+import streamlit as st
 
-st.set_page_config(page_title="Opisywanie zdjęć", layout="centered")
-
-st.title("📸 Generator opisów zdjęć")
+st.set_page_config(
+    page_title="Opisywanie zdjęć", layout="wide"
+)  # "wide" daje pełną szerokość z panelem
 
 # Pobranie klucza z Secrets
 anthropic_api_key = st.secrets.get("ANTHROPIC_API_KEY")
@@ -17,7 +16,15 @@ if not anthropic_api_key:
 # Inicjalizacja klienta Anthropic
 client = anthropic.Anthropic(api_key=anthropic_api_key)
 
-# Przesyłanie zdjęcia
+# --- PANEL BOCZNY (PO LEWEJ STRONIE) ---
+with st.sidebar:
+    st.header("⚙️ Opcje / Kod QR")
+    st.info("Tutaj jest Twój boczny panel!")
+    # Jeśli miałaś tu wcześniej kod QR, wyświetlimy go lub wkleimy odpowiednią sekcję
+
+# --- GŁÓWNA CZEŚĆ EKRANU ---
+st.title("📸 Generator opisów zdjęć")
+
 uploaded_file = st.file_uploader(
     "Wybierz zdjęcie...", type=["jpg", "jpeg", "png"]
 )
@@ -28,12 +35,10 @@ if uploaded_file is not None:
     if st.button("Opisz zdjęcie"):
         with st.spinner("Claude analizuje zdjęcie..."):
             try:
-                # Konwersja obrazu na base64
                 bytes_data = uploaded_file.getvalue()
                 base64_image = base64.b64encode(bytes_data).decode("utf-8")
                 media_type = uploaded_file.type
 
-                # Zapytanie do modelu Claude
                 message = client.messages.create(
                     model="claude-3-5-sonnet-20241022",
                     max_tokens=1000,
