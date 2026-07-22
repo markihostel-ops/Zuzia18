@@ -4,7 +4,7 @@ import base64
 import threading
 from io import BytesIO
 
-from PIL import Image
+from PIL import Image, ExifTags
 import cloudinary
 import cloudinary.api
 import cloudinary.uploader
@@ -49,22 +49,63 @@ LISTA GOŚCI I RELACJE:
 - Ilona i Czarek – przyjaciele rodziny; dzieci: Antek i Klaudia (chłopak Hubert)
 - Iwona i Robert – przyjaciele rodziny; dzieci: Kamil (z Karoliną) i Olek (z Agatą)
 - Wioletta i Marcin – rodzice Zuzi M
+- Julia – żona Daniela K
+- Kacper – chłopak Nikoli
+- Dawid – mąż Natalii
+- Sebastian – mąż Oli
+- Karolina – dziewczyna Kamila
+- Agata – dziewczyna Olka
+- Hubert – chłopak Klaudii
 - Oksana, Marlena, Daniel, Pati – przyjaciele rodziny
 
 ZASADY TWORZENIA KOMENTARZY:
 1. Napisz dokładnie 1-2 zdania i dodaj 1-2 emoji.
 2. Komentarz ma być śmieszny i ciepły – żart imprezowy, nie złośliwość.
 3. NIE przypisuj konkretnych imion do konkretnych twarzy na zdjęciu – nie wiesz kto jest kto.
-4. Zamiast tego wplataj imiona w żarty ogólne, np:
+4. Zamiast tego wplataj imiona w żarty ogólne nawiązujące do sytuacji na zdjęciu, np:
    - "Gdzieś tu chyba ukrywa się Radek z drugim talerzem 🍽️"
    - "Takie tańce to tylko Werka potrafi rozkręcić 💃"
    - "Babcia Hania patrzy na to wszystko z dumą... albo z niedowierzaniem 😄"
-5. NIE zaczynaj każdego komentarza od imienia Zuzi – używaj go maksymalnie raz na 4-5 zdjęć.
-6. Opisuj też to co WIDZISZ na zdjęciu: taniec, toast, śmiech, jedzenie, grupowe zdjęcia itp.
-7. Nie używaj cudzysłowów ani gwiazdek w odpowiedzi.
-8. Zwróć WYŁĄCZNIE gotowy tekst komentarza, bez żadnych wstępów ani wyjaśnień.
+   - "Sebastian i Dawid już kombinują jak tu dobrze wypaść na zdjęciu 📸"
+   - "Kacper i Hubert udają że nie wiedzą co się dzieje, ale wiemy swoje 😏"
+5. Używaj RÓŻNYCH imion z listy – nie wracaj ciągle do tych samych osób.
+6. NIE zaczynaj każdego komentarza od imienia Zuzi – używaj go maksymalnie raz na 4-5 zdjęć.
+7. Opisuj też to co WIDZISZ na zdjęciu: taniec, toast, śmiech, jedzenie, grupowe zdjęcia itp.
+8. Nie używaj cudzysłowów ani gwiazdek w odpowiedzi.
+9. Zwróć WYŁĄCZNIE gotowy tekst komentarza, bez żadnych wstępów ani wyjaśnień.
 
 Napisz teraz komentarz do tego zdjęcia:"""
+
+
+def fix_image_orientation(img: Image.Image) -> Image.Image:
+    """Naprawia orientację zdjęcia na podstawie danych EXIF z telefonu."""
+    try:
+        exif = img._getexif()
+        if exif is None:
+            return img
+        orientation_key = next(
+            (k for k, v in ExifTags.TAGS.items() if v == "Orientation"), None
+        )
+        if orientation_key is None or orientation_key not in exif:
+            return img
+        orientation = exif[orientation_key]
+        if orientation == 2:
+            img = img.transpose(Image.FLIP_LEFT_RIGHT)
+        elif orientation == 3:
+            img = img.rotate(180)
+        elif orientation == 4:
+            img = img.rotate(180).transpose(Image.FLIP_LEFT_RIGHT)
+        elif orientation == 5:
+            img = img.rotate(-90, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
+        elif orientation == 6:
+            img = img.rotate(-90, expand=True)
+        elif orientation == 7:
+            img = img.rotate(90, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
+        elif orientation == 8:
+            img = img.rotate(90, expand=True)
+    except Exception:
+        pass
+    return img
 
 
 def load_gallery():
@@ -247,8 +288,14 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         if img.mode in ("RGBA", "P", "CMYK"):
                             img = img.convert("RGB")
 
+                        # Napraw orientację na podstawie EXIF (zdjęcia z telefonu)
+                        img = fix_image_orientation(img)
+
+                        # Zmniejsz do max 2048px - dobra jakość, równy rozmiar dla każdego zdjęcia
+                        img.thumbnail((2048, 2048), Image.LANCZOS)
+
                         upload_buf = BytesIO()
-                        img.save(upload_buf, format="JPEG", quality=92)
+                        img.save(upload_buf, format="JPEG", quality=88)
                         upload_buf.seek(0)
 
                         upload_result = cloudinary.uploader.upload(
