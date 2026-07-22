@@ -82,7 +82,7 @@ if st.sidebar.button("Wyczysc cala galerie"):
         with lock:
             if os.path.exists(DB_FILE):
                 os.remove(DB_FILE)
-
+        
         if cloud_name and cloudinary_key and cloudinary_secret:
             try:
                 resources = cloudinary.api.resources(type="upload", prefix=CLOUDINARY_FOLDER, max_results=500)
@@ -110,22 +110,22 @@ if "uploader_key" not in st.session_state:
 if view_mode == "Wgraj Zdjecie (Goscie)":
     st.title("18. Urodziny Zuzi")
     st.header("Wrzuc fotki na zywo na ekran projektora!")
-
+    
     if not cloud_name or not gemini_key:
         st.error("Brak skonfigurowanych kluczy w Streamlit Secrets!")
     else:
         uploaded_files = st.file_uploader(
-            "Wybierz zdjecia z telefonu:",
-            type=["jpg", "jpeg", "png", "heic"],
+            "Wybierz zdjecia z telefonu:", 
+            type=["jpg", "jpeg", "png", "heic"], 
             accept_multiple_files=True,
             key=f"uploader_{st.session_state.uploader_key}"
         )
-
+        
         if uploaded_files:
             if st.button("Wyslij zdjecia do pokazu"):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
-
+                
                 generation_config = {
                     "temperature": 1.0,
                     "top_p": 0.95,
@@ -137,38 +137,38 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                     {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
                     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
                 ]
-
+                
                 model = genai.GenerativeModel(
-                    "gemini-2.0-flash",
+                    "gemini-2.0-flash", 
                     generation_config=generation_config,
                     safety_settings=safety_settings
                 )
-
+                
                 total_files = len(uploaded_files)
                 for i, uploaded_file in enumerate(uploaded_files):
                     status_text.text(f"Analizuję zdjęcie {i+1} z {total_files}...")
-
+                    
                     try:
                         image_bytes = uploaded_file.getvalue()
                         img = Image.open(BytesIO(image_bytes))
                         if img.mode in ("RGBA", "P"):
                             img = img.convert("RGB")
-
+                        
                         img.thumbnail((1600, 1600))
-
+                        
                         byte_arr = BytesIO()
                         img.save(byte_arr, format='JPEG', quality=85)
                         byte_arr.seek(0)
-
+                        
                         upload_result = cloudinary.uploader.upload(byte_arr, folder=CLOUDINARY_FOLDER)
                         image_url = upload_result.get("secure_url")
-
+                        
                         if not image_url:
                             continue
-
+                        
                         caption = f"Zuzia 18! 🔥"
                         success_ai = False
-
+                        
                         random_angles = [
                             "Skup się na ubraniach i stylu.",
                             "Skup się na minach i ekspresji twarzy.",
@@ -186,7 +186,7 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                                     "Zwróć uwagę na unikalne szczegóły tego kadru i unikaj oklepanych fraz. "
                                     "Zwróć wyłącznie sam tekst, bez żadnych cudzysłowów."
                                 )
-
+                                
                                 response = model.generate_content([prompt, img])
                                 if response and hasattr(response, "text") and response.text:
                                     text_resp = response.text.strip().replace('"', '').replace("'", "")
@@ -196,30 +196,30 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                                         break
                             except Exception as ex:
                                 time.sleep(0.5)
-
+                        
                         if not success_ai:
                             caption = f"Impreza u Zuzi w pełnym biegu! 🥂🔥"
-
+                        
                         save_item(image_url, caption)
                     except Exception as e:
                         st.error(f"Błąd przy zdjęciu {i+1}: {e}")
-
+                    
                     progress_bar.progress((i + 1) / total_files)
-
+                
                 status_text.text("Gotowe! Zdjęcia trafiły na ekran.")
                 time.sleep(1)
                 st.session_state.uploader_key += 1
                 st.rerun()
 else:
     st.title("Ekran Projektora / Pokaz na Zywo")
-
+    
     st_autorefresh(interval=3000, key="dj_autorefresh")
-
+    
     st.sidebar.markdown("---")
     st.sidebar.subheader("Zarzadzanie pojedynczymi zdjeciami")
-
+    
     items = load_gallery()
-
+    
     if items:
         for idx, it in enumerate(items):
             col_txt, col_btn = st.sidebar.columns([3, 1])
@@ -238,14 +238,14 @@ else:
     if items:
         if st.session_state.current_index >= len(items):
             st.session_state.current_index = 0
-
+            
         idx = st.session_state.current_index
         item = items[idx]
-
+        
         st.image(item["url"], use_container_width=True)
         st.markdown(f"<h2 style='text-align: center;'>{item['caption']}</h2>", unsafe_allow_html=True)
         st.caption(f"Zdjecie {idx + 1} z {len(items)}")
-
+        
         if auto_play and len(items) > 1:
             current_time = time.time()
             if current_time - st.session_state.last_slide_time >= slide_delay_sec:
@@ -254,4 +254,3 @@ else:
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc coś ze swojego telefonu.")
-
