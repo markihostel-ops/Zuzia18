@@ -19,6 +19,13 @@ cloud_name = st.secrets.get("CLOUDINARY_CLOUD_NAME", "")
 cloudinary_key = st.secrets.get("CLOUDINARY_API_KEY", "")
 cloudinary_secret = st.secrets.get("CLOUDINARY_API_SECRET", "")
 
+# DIAGNOSTYKA - pokazuje czy klucze sa widoczne
+st.sidebar.markdown("### Diagnostyka kluczy")
+st.sidebar.write("ANTHROPIC_API_KEY:", "OK" if anthropic_key else "BRAK")
+st.sidebar.write("Dlugosc klucza:", len(anthropic_key))
+st.sidebar.write("CLOUDINARY:", "OK" if cloud_name else "BRAK")
+st.sidebar.markdown("---")
+
 if cloud_name and cloudinary_key and cloudinary_secret:
     cloudinary.config(
         cloud_name=cloud_name,
@@ -31,12 +38,12 @@ LOCK_FILE = "galeria.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
 
 PROMPT_WITH_IMAGE = (
-    "Jesteś rozbawionym, lekko złośliwym gościem na 18. urodzinach Zuzi. "
-    "Opisz TO KONKRETNE zdjęcie w 1-2 krótkich zdaniach: "
-    "co robią osoby, jakie mają miny, co trzymają, co widać w tle. "
-    "Napisz zabawny, imprezowy komentarz nawiązujący do konkretnych detali z kadru - "
-    "złośliwy, ale absolutnie nieobraźliwy, żeby bohaterowie sami się roześmiali. "
-    "Dodaj 1-2 emoji. Zwróć WYŁĄCZNIE tekst komentarza, bez cudzysłowów i wstępów."
+    "Jestes rozbawionym, lekko zlosliwym gosciem na 18. urodzinach Zuzi. "
+    "Opisz TO KONKRETNE zdjecie w 1-2 krotkich zdaniach: "
+    "co robia osoby, jakie maja miny, co trzymaja, co widac w tle. "
+    "Napisz zabawny, imprezowy komentarz nawiazujacy do konkretnych detali z kadru - "
+    "zlosliwy, ale absolutnie nieobraźliwy, zeby bohaterowie sami sie rozesmiali. "
+    "Dodaj 1-2 emoji. Zwroc WYLACZNIE tekst komentarza, bez cudzyslowow i wstepow."
 )
 
 
@@ -79,11 +86,9 @@ def save_full_gallery(items):
         st.error(f"Blad zapisu: {e}")
 
 
-def generate_caption(img_pil: Image.Image, debug: bool = False) -> str:
+def generate_caption(img_pil: Image.Image) -> str:
     if not anthropic_key:
-        if debug:
-            st.sidebar.error("Brak klucza ANTHROPIC_API_KEY w Secrets!")
-        return "Zuzia i ekipa daja czadu! 🎉🔥"
+        return "BRAK KLUCZA ANTHROPIC"
 
     buf = BytesIO()
     img_pil.save(buf, format="JPEG", quality=85)
@@ -119,15 +124,11 @@ def generate_caption(img_pil: Image.Image, debug: bool = False) -> str:
             text = message.content[0].text.strip()
             text = text.replace('"', '').replace("'", "").strip()
 
-            if debug:
-                st.sidebar.success(f"Claude odpowiedz: {text}")
-
             if len(text) > 3:
                 return text
 
         except Exception as ex:
-            if debug:
-                st.sidebar.error(f"Proba {attempt+1} blad: {ex}")
+            st.sidebar.error(f"Blad Claude proba {attempt+1}: {ex}")
             time.sleep(1)
 
     return "Zuzia i ekipa daja czadu! 🎉🔥"
@@ -139,8 +140,6 @@ view_mode = st.sidebar.radio(
     ("Wgraj Zdjecie (Goscie)", "Pokaz na Zywo (DJ)")
 )
 
-st.sidebar.markdown("---")
-debug_mode = st.sidebar.checkbox("Tryb DEBUG", value=False)
 st.sidebar.markdown("---")
 
 if st.sidebar.button("Wyczysc cala galerie"):
@@ -219,7 +218,7 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                             progress_bar.progress((i + 1) / total_files)
                             continue
 
-                        caption = generate_caption(img, debug=debug_mode)
+                        caption = generate_caption(img)
                         save_item(image_url, caption)
 
                     except Exception as e:
