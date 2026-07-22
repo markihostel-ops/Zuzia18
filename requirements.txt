@@ -5,3 +5,4 @@ pillow
 filelock
 streamlit-autorefresh
 requests
+anthropic
