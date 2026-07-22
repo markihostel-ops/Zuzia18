@@ -4,6 +4,7 @@ import base64
 import threading
 import random
 from io import BytesIO
+from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image, ExifTags
 import cloudinary
@@ -34,6 +35,9 @@ QUEUE_FILE = "guest_queue.txt"
 QUEUE_LOCK = "guest_queue.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
 PLACEHOLDER_CAPTION = "Zaraz skomentuje... 👀"
+
+# Max 5 równoczesnych zapytań do Claude API - chroni przed przeciążeniem
+AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 ALL_GUESTS = [
     "Zuzia B (solenizantka, 18 lat)",
@@ -81,40 +85,10 @@ ALL_GUESTS = [
 ]
 
 
-def load_queue() -> list:
-    """Wczytuje kolejkę gości z pliku."""
-    if not os.path.exists(QUEUE_FILE):
-        return []
-    lock = FileLock(QUEUE_LOCK)
-    try:
-        with lock:
-            with open(QUEUE_FILE, "r", encoding="utf-8") as f:
-                return [line.strip() for line in f if line.strip()]
-    except Exception:
-        return []
-
-
-def save_queue(queue: list):
-    """Zapisuje kolejkę gości do pliku."""
-    lock = FileLock(QUEUE_LOCK)
-    try:
-        with lock:
-            with open(QUEUE_FILE, "w", encoding="utf-8") as f:
-                for item in queue:
-                    f.write(f"{item}\n")
-    except Exception:
-        pass
-
-
 def get_next_guest() -> str:
-    """
-    Pobiera następnego gościa z kolejki.
-    Gdy kolejka się wyczerpie, tasuje wszystkich od nowa.
-    Każdy gość pojawi się dokładnie raz przed powtórzeniem.
-    """
+    """Kolejka gości — każdy pojawia się raz zanim lista się powtórzy."""
     lock = FileLock(QUEUE_LOCK)
     with lock:
-        # Wczytaj kolejkę
         queue = []
         if os.path.exists(QUEUE_FILE):
             try:
@@ -123,15 +97,12 @@ def get_next_guest() -> str:
             except Exception:
                 queue = []
 
-        # Jeśli pusta - przetasuj wszystkich gości od nowa
         if not queue:
             queue = ALL_GUESTS.copy()
             random.shuffle(queue)
 
-        # Pobierz pierwszego z kolejki
         guest = queue.pop(0)
 
-        # Zapisz pozostałą kolejkę
         try:
             with open(QUEUE_FILE, "w", encoding="utf-8") as f:
                 for item in queue:
@@ -150,13 +121,12 @@ GOŚĆ DO WSPOMNIENIA W KOMENTARZU: {guest}
 
 ZASADY:
 1. Dokładnie 1-2 zdania + 1-2 emoji.
-2. Wplecione imię ma być naturalne i śmieszne, ale NIE przypisuj go konkretnej twarzy na zdjęciu - nie wiesz kto jest kto.
+2. Wplecione imię ma być naturalne i śmieszne, ale NIE przypisuj go konkretnej twarzy - nie wiesz kto jest kto.
 3. Opisuj co WIDZISZ na zdjęciu: taniec, toast, śmiech, jedzenie, grupowe zdjęcia itp.
 4. Przykłady dobrego stylu:
    - "Gdzieś tu chyba ukrywa się Radek z drugim talerzem 🍽️"
    - "Babcia Hania patrzy na to z dumą... albo z niedowierzaniem 😄"
    - "Takie ruchy to tylko Werka potrafi rozkręcić na parkiecie 💃"
-   - "Sebastian udaje że nie tańczy, ale nogi same go ponoszą 😏"
 5. Nie używaj cudzysłowów ani gwiazdek.
 6. Zwróć WYŁĄCZNIE gotowy tekst komentarza, zero wstępów.
 
@@ -190,25 +160,49 @@ def fix_image_orientation(img: Image.Image) -> Image.Image:
     return img
 
 
+def resize_to(img: Image.Image, max_size: int) -> Image.Image:
+    """Zmniejsza obraz do max_size px (dłuższy bok), nie powiększa małych."""
+    w, h = img.size
+    if w <= max_size and h <= max_size:
+        return img
+    ratio = min(max_size / w, max_size / h)
+    return img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+
+
 def prepare_image(image_bytes: bytes) -> Image.Image:
+    """Otwiera, naprawia orientację i konwertuje do RGB. Zwraca oryginalny rozmiar."""
     img = Image.open(BytesIO(image_bytes))
     if img.mode in ("RGBA", "P", "CMYK", "LA"):
         img = img.convert("RGB")
     img = fix_image_orientation(img)
-    img.thumbnail((1600, 1600), Image.LANCZOS)
     return img
 
 
-def compress_to_limit(img: Image.Image, max_kb: int = 600) -> BytesIO:
-    quality = 85
+def compress_for_projector(img: Image.Image) -> BytesIO:
+    """1920px, max 800KB — dobra jakość na projektorze fullHD."""
+    img_resized = resize_to(img, 1920)
+    quality = 88
     while True:
         buf = BytesIO()
-        img.save(buf, format="JPEG", quality=quality)
-        if buf.tell() / 1024 <= max_kb or quality <= 45:
+        img_resized.save(buf, format="JPEG", quality=quality, optimize=True)
+        if buf.tell() / 1024 <= 800 or quality <= 50:
             break
-        quality -= 8
+        quality -= 6
     buf.seek(0)
     return buf
+
+
+def compress_for_ai(img: Image.Image) -> bytes:
+    """800px, max 300KB — wystarczy żeby AI widziała co jest na zdjęciu."""
+    img_resized = resize_to(img, 800)
+    quality = 80
+    while True:
+        buf = BytesIO()
+        img_resized.save(buf, format="JPEG", quality=quality, optimize=True)
+        if buf.tell() / 1024 <= 300 or quality <= 40:
+            break
+        quality -= 6
+    return buf.getvalue()
 
 
 def load_gallery():
@@ -270,14 +264,13 @@ def save_full_gallery(items):
 
 
 def generate_caption_for_url(image_url: str, img_pil: Image.Image):
+    """Generuje komentarz AI — wykonywany przez ThreadPoolExecutor (max 5 naraz)."""
     if not anthropic_key:
         return
 
-    buf = BytesIO()
-    img_copy = img_pil.copy()
-    img_copy.thumbnail((1024, 1024), Image.LANCZOS)
-    img_copy.save(buf, format="JPEG", quality=80)
-    image_b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
+    # Mały rozmiar dla AI — oszczędza kredyty, wystarczy żeby zobaczyć co na zdjęciu
+    image_bytes_ai = compress_for_ai(img_pil)
+    image_b64 = base64.standard_b64encode(image_bytes_ai).decode("utf-8")
 
     guest = get_next_guest()
     prompt = get_prompt(guest)
@@ -373,14 +366,22 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
     if not cloud_name or not anthropic_key:
         st.error("Brak skonfigurowanych kluczy w Streamlit Secrets!")
     else:
+        st.info("📸 Wrzucaj maksymalnie 10 zdjec na raz — jak sie wyswietla, mozesz wrzucic kolejne!")
+
         uploaded_files = st.file_uploader(
-            "Wybierz zdjecia z telefonu:",
+            "Wybierz zdjecia z telefonu (max 10):",
             type=["jpg", "jpeg", "png", "heic"],
             accept_multiple_files=True,
             key=f"uploader_{st.session_state.uploader_key}",
         )
 
+        # Ogranicz do max 10 zdjec
+        if uploaded_files and len(uploaded_files) > 10:
+            st.warning("Za duzo zdjec! Wyslij maksymalnie 10 na raz. Odznacz kilka i sprobuj ponownie.")
+            uploaded_files = uploaded_files[:10]
+
         if uploaded_files:
+            st.write(f"Wybrano: {len(uploaded_files)} zdjec")
             if st.button("Wyslij zdjecia do pokazu", key="btn_wyslij"):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -392,7 +393,8 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                     try:
                         image_bytes = uploaded_file.getvalue()
                         img = prepare_image(image_bytes)
-                        upload_buf = compress_to_limit(img, max_kb=600)
+                        # 1920px, max 800KB — dobra jakość na projektorze
+                        upload_buf = compress_for_projector(img)
 
                         upload_result = cloudinary.uploader.upload(
                             upload_buf, folder=CLOUDINARY_FOLDER
@@ -404,14 +406,15 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                             progress_bar.progress((i + 1) / total_files)
                             continue
 
+                        # Zapisz od razu z placeholderem
                         save_item(image_url, PLACEHOLDER_CAPTION)
 
-                        t = threading.Thread(
-                            target=generate_caption_for_url,
-                            args=(image_url, img.copy()),
-                            daemon=True
+                        # Wyślij do kolejki AI (max 5 naraz)
+                        AI_EXECUTOR.submit(
+                            generate_caption_for_url,
+                            image_url,
+                            img.copy()
                         )
-                        t.start()
 
                     except Exception as e:
                         st.error(f"Blad przy zdjeciu {i + 1}: {e}")
