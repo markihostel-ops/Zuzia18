@@ -3,7 +3,7 @@ import time
 import base64
 import random
 from io import BytesIO
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image, ExifTags
 try:
@@ -44,7 +44,6 @@ MAX_PHOTOS = 10
 MAX_CAPTION_LEN = 150
 AI_TIMEOUT_SEC = 55
 
-# Max 5 rownoczesnych zapytan do Claude API
 AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 ALL_GUESTS = [
@@ -191,7 +190,7 @@ def compress_for_projector(img: Image.Image) -> BytesIO:
 
 
 def compress_for_ai(img: Image.Image) -> bytes:
-    """800px max, max 300KB — wystarczy zeby AI widziala co jest na zdjeciu."""
+    """800px max, max 300KB — wystarczy zeby AI widziala co na zdjeciu."""
     img_r = resize_to(img, 800)
     quality = 80
     while True:
@@ -233,7 +232,6 @@ def save_item(url, caption):
 
 
 def update_caption(url, new_caption):
-    # Skroc jesli za dlugi
     if len(new_caption) > MAX_CAPTION_LEN:
         new_caption = new_caption[:MAX_CAPTION_LEN].rsplit(" ", 1)[0] + "..."
     lock = FileLock(LOCK_FILE)
@@ -265,7 +263,6 @@ def save_full_gallery(items):
 
 
 def upload_to_cloudinary(upload_buf: BytesIO) -> str:
-    """Upload z retry — 3 proby jesli Cloudinary zawiedzie."""
     for attempt in range(3):
         try:
             upload_buf.seek(0)
@@ -281,7 +278,6 @@ def upload_to_cloudinary(upload_buf: BytesIO) -> str:
 
 
 def generate_caption_for_url(image_url: str, img_pil: Image.Image):
-    """Generuje komentarz AI z timeoutem 55 sekund."""
     if not anthropic_key:
         update_caption(image_url, "Ekipa bawi sie wysmienicie! 🎉🔥")
         return
@@ -293,13 +289,12 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
     prompt = get_prompt(guest)
 
     for attempt in range(3):
-        # Sprawdz timeout
         if time.time() - start > AI_TIMEOUT_SEC:
             break
         try:
             client = anthropic.Anthropic(api_key=anthropic_key)
             message = client.messages.create(
-                model="claude-sonnet-4-6",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=150,
                 messages=[
                     {
@@ -339,7 +334,6 @@ view_mode = st.sidebar.radio(
 )
 st.sidebar.markdown("---")
 
-# Przycisk czyszczenia z potwierdzeniem
 if "confirm_clear" not in st.session_state:
     st.session_state.confirm_clear = False
 
