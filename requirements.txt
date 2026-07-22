@@ -2,6 +2,7 @@ streamlit
 google-generativeai
 cloudinary
 pillow
+pillow-heif
 filelock
 streamlit-autorefresh
 requests
