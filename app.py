@@ -47,29 +47,12 @@ AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 
 def get_prompt() -> str:
-    style = random.choice([
-        "napisz to jak rozbawiony swiadek ktory nie moze uwierzyc w to co widzi",
-        "napisz to jak komentator sportowy relacjonujacy decydujacy moment meczu",
-        "napisz to jakbys czytал mysli osoby na zdjeciu na glos",
-        "napisz to jak babcia ktora pierwszy raz widzi takie rzeczy i jest w szoku",
-        "napisz to jak narrator dokumentu przyrodniczego obserwujacy dzikie zwierzeta",
-        "napisz to jak detektyw ktory wlasnie odkryl dowod zbrodni",
-        "napisz to jak spiker wiadomosci relacjonujacy pilne wydarzenie",
-        "napisz to jak osoba ktora za 10 lat pokaze to zdjecie i sie smiac nie moze",
-    ])
-    return f"""Jestes na 18. urodzinach Zuzi B i komentujesz zdjecia z imprezy.
+    return """Jestes wodzirej na osiemnastce. Patrzysz na zdjecie i rzucasz JEDEN krotki ciety komentarz. 
 
-TWOJ STYL NA TO ZDJECIE: {style}
-
-ZADANIE: Napisz JEDEN krotki komentarz do tego zdjecia. Max 2 zdania i 1-2 emoji.
-
-WAZNE:
-- Bazuj na TYM CO WIDZISZ na zdjeciu — konkretna sytuacja, emocje, gesty, co sie dzieje
-- Bądz smieszny przez zaskoczenie, absurd lub trafna obserwacje
-- NIE uzywaj imion
-- NIE zaczynaj od slow: "Mina", "Ktos", "Oficjalnie", "To zdjecie"
-- Pisz po polsku
-- Tylko gotowy tekst komentarza, bez wstepow
+Zasady:
+- Max 1 zdanie + emoji. Krotko i celnie — jak dobry dowcip.
+- Reaguj na to co widzisz: sytuacje, klimat, wyraz twarzy, co sie dzieje.
+- Pisz po polsku. Zero imion. Tylko tekst komentarza.
 
 Komentarz:"""
 
