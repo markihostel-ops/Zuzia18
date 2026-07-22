@@ -35,8 +35,9 @@ QUEUE_FILE = "guest_queue.txt"
 QUEUE_LOCK = "guest_queue.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
 PLACEHOLDER_CAPTION = "Zaraz skomentuje... 👀"
+MAX_PHOTOS = 10
 
-# Max 5 równoczesnych zapytań do Claude API - chroni przed przeciążeniem
+# Max 5 rownoczesnych zapytan do Claude API
 AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 ALL_GUESTS = [
@@ -48,45 +49,45 @@ ALL_GUESTS = [
     "Babcia Hania",
     "Dziadek Kazik",
     "Karolcia (ciocia Zuzi B)",
-    "Patryk (wujek, mąż Karolci)",
-    "Rafał (wujek Zuzi B)",
-    "Juda (ciocia, żona Rafała)",
-    "Nikola (córka Rafała i Judy)",
-    "Kacper (chłopak Nikoli)",
-    "Daniel K (syn Rafała i Judy)",
-    "Julia (żona Daniela K)",
-    "Babcia Małgosia",
+    "Patryk (wujek, maz Karolci)",
+    "Rafal (wujek Zuzi B)",
+    "Juda (ciocia, zona Rafala)",
+    "Nikola (corka Rafala i Judy)",
+    "Kacper (chlopak Nikoli)",
+    "Daniel K (syn Rafala i Judy)",
+    "Julia (zona Daniela K)",
+    "Babcia Malgosia",
     "Mariusz (wujek Zuzi B)",
-    "Eliza (ciotka, żona Mariusza)",
-    "Natalia (córka Mariusza i Elizy)",
-    "Dawid (mąż Natalii)",
-    "Ola (córka Mariusza i Elizy)",
-    "Sebastian (mąż Oli)",
+    "Eliza (ciotka, zona Mariusza)",
+    "Natalia (corka Mariusza i Elizy)",
+    "Dawid (maz Natalii)",
+    "Ola (corka Mariusza i Elizy)",
+    "Sebastian (maz Oli)",
     "Aga (ciocia Zuzi B)",
-    "Radek (wujek, mąż Agi)",
-    "Ilona (przyjaciółka rodziny)",
-    "Czarek (przyjaciel rodziny, mąż Ilony)",
+    "Radek (wujek, maz Agi)",
+    "Ilona (przyjaciolka rodziny)",
+    "Czarek (przyjaciel rodziny, maz Ilony)",
     "Antek (syn Ilony i Czarka)",
-    "Klaudia (córka Ilony i Czarka)",
-    "Hubert (chłopak Klaudii)",
-    "Iwona (przyjaciółka rodziny)",
-    "Robert (przyjaciel rodziny, mąż Iwony)",
+    "Klaudia (corka Ilony i Czarka)",
+    "Hubert (chlopak Klaudii)",
+    "Iwona (przyjaciolka rodziny)",
+    "Robert (przyjaciel rodziny, maz Iwony)",
     "Kamil (syn Iwony i Roberta)",
     "Karolina (dziewczyna Kamila)",
     "Olek (syn Iwony i Roberta)",
     "Agata (dziewczyna Olka)",
     "Wioletta (mama Zuzi M)",
     "Marcin (tata Zuzi M)",
-    "Zuzia M (najlepsza przyjaciółka Zuzi B)",
-    "Oksana (przyjaciółka rodziny)",
-    "Marlena (przyjaciółka rodziny)",
+    "Zuzia M (najlepsza przyjaciolka Zuzi B)",
+    "Oksana (przyjaciolka rodziny)",
+    "Marlena (przyjaciolka rodziny)",
     "Daniel (przyjaciel rodziny)",
-    "Pati (przyjaciółka rodziny)",
+    "Pati (przyjaciolka rodziny)",
 ]
 
 
 def get_next_guest() -> str:
-    """Kolejka gości — każdy pojawia się raz zanim lista się powtórzy."""
+    """Kolejka gosci — kazdy pojawia sie raz zanim lista sie powtorzy."""
     lock = FileLock(QUEUE_LOCK)
     with lock:
         queue = []
@@ -96,41 +97,38 @@ def get_next_guest() -> str:
                     queue = [line.strip() for line in f if line.strip()]
             except Exception:
                 queue = []
-
         if not queue:
             queue = ALL_GUESTS.copy()
             random.shuffle(queue)
-
         guest = queue.pop(0)
-
         try:
             with open(QUEUE_FILE, "w", encoding="utf-8") as f:
                 for item in queue:
                     f.write(f"{item}\n")
         except Exception:
             pass
-
     return guest
 
 
 def get_prompt(guest: str) -> str:
-    return f"""Jesteś dowcipnym konferansjerem na 18. urodzinach Zuzi B.
-Napisz JEDEN śmieszny, ciepły komentarz do tego zdjęcia z imprezy.
+    return f"""Jestes dowcipnym konferansjerem na 18. urodzinach Zuzi B.
+Napisz JEDEN smieszny, ciepły komentarz do tego zdjecia z imprezy.
 
-GOŚĆ DO WSPOMNIENIA W KOMENTARZU: {guest}
+GOSC DO WSPOMNIENIA W KOMENTARZU: {guest}
 
 ZASADY:
-1. Dokładnie 1-2 zdania + 1-2 emoji.
-2. Wplecione imię ma być naturalne i śmieszne, ale NIE przypisuj go konkretnej twarzy - nie wiesz kto jest kto.
-3. Opisuj co WIDZISZ na zdjęciu: taniec, toast, śmiech, jedzenie, grupowe zdjęcia itp.
-4. Przykłady dobrego stylu:
-   - "Gdzieś tu chyba ukrywa się Radek z drugim talerzem 🍽️"
-   - "Babcia Hania patrzy na to z dumą... albo z niedowierzaniem 😄"
-   - "Takie ruchy to tylko Werka potrafi rozkręcić na parkiecie 💃"
-5. Nie używaj cudzysłowów ani gwiazdek.
-6. Zwróć WYŁĄCZNIE gotowy tekst komentarza, zero wstępów.
+1. Dokladnie 1-2 zdania + 1-2 emoji.
+2. Wplecione imie ma byc naturalne i smieszne, ale NIE przypisuj go konkretnej twarzy - nie wiesz kto jest kto.
+3. Opisuj co WIDZISZ na zdjeciu: taniec, toast, smiech, jedzenie, grupowe zdjecia itp.
+4. Przyklady dobrego stylu:
+   - "Gdzies tu chyba ukrywa sie Radek z drugim talerzem"
+   - "Babcia Hania patrzy na to z duma... albo z niedowierzaniem"
+   - "Takie ruchy to tylko Werka potrafi rozkrecic na parkiecie"
+   - "Sebastian udaje ze nie tanczy, ale nogi same go ponoszą"
+5. Nie uzywaj cudzyslowow ani gwiazdek.
+6. Zwroc WYLACZNIE gotowy tekst komentarza, zero wstepow.
 
-Komentarz do zdjęcia:"""
+Komentarz do zdjecia:"""
 
 
 def fix_image_orientation(img: Image.Image) -> Image.Image:
@@ -161,7 +159,6 @@ def fix_image_orientation(img: Image.Image) -> Image.Image:
 
 
 def resize_to(img: Image.Image, max_size: int) -> Image.Image:
-    """Zmniejsza obraz do max_size px (dłuższy bok), nie powiększa małych."""
     w, h = img.size
     if w <= max_size and h <= max_size:
         return img
@@ -170,7 +167,6 @@ def resize_to(img: Image.Image, max_size: int) -> Image.Image:
 
 
 def prepare_image(image_bytes: bytes) -> Image.Image:
-    """Otwiera, naprawia orientację i konwertuje do RGB. Zwraca oryginalny rozmiar."""
     img = Image.open(BytesIO(image_bytes))
     if img.mode in ("RGBA", "P", "CMYK", "LA"):
         img = img.convert("RGB")
@@ -179,7 +175,7 @@ def prepare_image(image_bytes: bytes) -> Image.Image:
 
 
 def compress_for_projector(img: Image.Image) -> BytesIO:
-    """1920px, max 800KB — dobra jakość na projektorze fullHD."""
+    """1920px, max 800KB — dobra jakosc na projektorze fullHD."""
     img_resized = resize_to(img, 1920)
     quality = 88
     while True:
@@ -193,7 +189,7 @@ def compress_for_projector(img: Image.Image) -> BytesIO:
 
 
 def compress_for_ai(img: Image.Image) -> bytes:
-    """800px, max 300KB — wystarczy żeby AI widziała co jest na zdjęciu."""
+    """800px, max 300KB — wystarczy zeby AI widziala co jest na zdjeciu."""
     img_resized = resize_to(img, 800)
     quality = 80
     while True:
@@ -264,17 +260,12 @@ def save_full_gallery(items):
 
 
 def generate_caption_for_url(image_url: str, img_pil: Image.Image):
-    """Generuje komentarz AI — wykonywany przez ThreadPoolExecutor (max 5 naraz)."""
     if not anthropic_key:
         return
-
-    # Mały rozmiar dla AI — oszczędza kredyty, wystarczy żeby zobaczyć co na zdjęciu
     image_bytes_ai = compress_for_ai(img_pil)
     image_b64 = base64.standard_b64encode(image_bytes_ai).decode("utf-8")
-
     guest = get_next_guest()
     prompt = get_prompt(guest)
-
     for attempt in range(3):
         try:
             client = anthropic.Anthropic(api_key=anthropic_key)
@@ -293,10 +284,7 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
                                     "data": image_b64,
                                 },
                             },
-                            {
-                                "type": "text",
-                                "text": prompt,
-                            },
+                            {"type": "text", "text": prompt},
                         ],
                     }
                 ],
@@ -308,7 +296,6 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
                 return
         except Exception:
             time.sleep(2)
-
     update_caption(image_url, "Ekipa bawi sie wysmienicie! 🎉🔥")
 
 
@@ -320,7 +307,6 @@ view_mode = st.sidebar.radio(
     ("Wgraj Zdjecie (Goscie)", "Pokaz na Zywo (DJ)"),
     key="view_mode_radio"
 )
-
 st.sidebar.markdown("---")
 
 if st.sidebar.button("Wyczysc cala galerie", key="btn_wyczysc"):
@@ -360,28 +346,28 @@ for key, default in [
 # ─── Widok: Wgrywanie zdjec ───────────────────────────────────────────────────
 
 if view_mode == "Wgraj Zdjecie (Goscie)":
-    st.title("18. Urodziny Zuzi")
+    st.title("18. Urodziny Zuzi 🎉")
     st.header("Wrzuc fotki na zywo na ekran projektora!")
+    st.info(f"📸 Wrzucaj maksymalnie {MAX_PHOTOS} zdjec na raz — jak sie wyswietla, mozesz wrzucic kolejne!")
 
     if not cloud_name or not anthropic_key:
         st.error("Brak skonfigurowanych kluczy w Streamlit Secrets!")
     else:
-        st.info("📸 Wrzucaj maksymalnie 10 zdjec na raz — jak sie wyswietla, mozesz wrzucic kolejne!")
-
         uploaded_files = st.file_uploader(
-            "Wybierz zdjecia z telefonu (max 10):",
+            f"Wybierz maksymalnie {MAX_PHOTOS} zdjec z telefonu:",
             type=["jpg", "jpeg", "png", "heic"],
             accept_multiple_files=True,
             key=f"uploader_{st.session_state.uploader_key}",
         )
 
-        # Ogranicz do max 10 zdjec
-        if uploaded_files and len(uploaded_files) > 10:
-            st.warning("Za duzo zdjec! Wyslij maksymalnie 10 na raz. Odznacz kilka i sprobuj ponownie.")
-            uploaded_files = uploaded_files[:10]
+        if uploaded_files:
+            if len(uploaded_files) > MAX_PHOTOS:
+                st.error(f"Za duzo zdjec! Wybrales {len(uploaded_files)}, a mozna max {MAX_PHOTOS}. Odznacz kilka i sprobuj ponownie.")
+                uploaded_files = None
+            else:
+                st.write(f"Wybrano: {len(uploaded_files)} z {MAX_PHOTOS} zdjec")
 
         if uploaded_files:
-            st.write(f"Wybrano: {len(uploaded_files)} zdjec")
             if st.button("Wyslij zdjecia do pokazu", key="btn_wyslij"):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -389,11 +375,9 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
 
                 for i, uploaded_file in enumerate(uploaded_files):
                     status_text.text(f"Wgrywam zdjecie {i + 1} z {total_files}...")
-
                     try:
                         image_bytes = uploaded_file.getvalue()
                         img = prepare_image(image_bytes)
-                        # 1920px, max 800KB — dobra jakość na projektorze
                         upload_buf = compress_for_projector(img)
 
                         upload_result = cloudinary.uploader.upload(
@@ -406,10 +390,7 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                             progress_bar.progress((i + 1) / total_files)
                             continue
 
-                        # Zapisz od razu z placeholderem
                         save_item(image_url, PLACEHOLDER_CAPTION)
-
-                        # Wyślij do kolejki AI (max 5 naraz)
                         AI_EXECUTOR.submit(
                             generate_caption_for_url,
                             image_url,
@@ -491,7 +472,6 @@ else:
         with col2:
             st.image(display_url, use_container_width=True)
             clean_caption = item["caption"].replace("**", "").replace('"', '').strip()
-
             if clean_caption == PLACEHOLDER_CAPTION:
                 st.markdown(
                     "<h2 style='text-align: center; margin-top: 15px; color: #aaa;'>✍️ Zaraz skomentuje...</h2>",
