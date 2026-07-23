@@ -47,29 +47,20 @@ AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 
 def get_prompt() -> str:
-    styl = random.choice([
-        "okrzyk dopingujacy do tanca — krotki, energiczny, jak starter na imprezie",
-        "ciepłe zdanie o tym jak piekna jest ta chwila i ta noc",
-        "zabawna obserwacja o tym co sie dzieje na imprezie ogolnie",
-        "motywacja do wyjscia na parkiet — przekonujaca i radosna",
-        "zdanie ktore podsumowuje ducha tej imprezy — mlodosc, radosc, energia",
-        "okrzyk ze to najlepsza noc w historii — ale powiedziane inaczej niz zwykle",
-        "refleksja ze takie chwile sie pamieta do konca zycia — ale lekko i z usmiechem",
-        "zaproszenie zeby wszyscy sie bawili jeszcze lepiej",
-    ])
-    return f"""Jestes wodziреjem na 18. urodzinach Zuzi. Piszesz podpis pod zdjecie z imprezy.
+    return """Jestes na 18. urodzinach Zuzi i komentujesz zdjecia z imprezy.
 
-STYL TEGO PODPISU: {styl}
+Napisz jeden krotki, zabawny i ciepły komentarz do tego konkretnego zdjecia.
 
-ZASADY — przeczytaj uwazanie:
-1. Napisz dokladnie 1 zdanie po polsku + 1-2 emoji.
-2. Zdanie musi miec sens i byc poprawne jezykowo — zadnych bledow, zadnych urwanych mysli.
-3. Bądz roznorodny — NIE zaczynaj od slow: "Dziś", "Ta noc", "Czas", "Niech", "To jest".
-4. Pisz naturalnie jak czlowiek, nie jak robot.
-5. Zero imion. Zero przeklenst. Zero opisywania co jest na zdjeciu.
-6. Zwroc TYLKO gotowe zdanie. Nic wiecej.
+ZASADY:
+1. Dokladnie 1 zdanie + 1-2 emoji.
+2. Komentarz musi byc zwiazany z tym co widzisz na zdjeciu — sytuacja, nastroj, co sie dzieje, miny ludzi.
+3. Pisz poprawnie po polsku — pelne zdanie z sensem, nie urwane haslo.
+4. Bądz pozytywny, ciepły i smieszny — bez zlosliwosci, bez przeklenst.
+5. Bądz kreatywny — kazde zdjecie to inna reakcja, inny styl, inne slowa.
+6. NIE zaczynaj od: Dzis, Ta noc, Czas na, Niech, To jest, Wszyscy, Oto.
+7. Zero imion. Tylko gotowy komentarz, bez wstepow.
 
-Podpis:"""
+Komentarz:"""
 
 
 def fix_image_orientation(img: Image.Image) -> Image.Image:
