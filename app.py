@@ -47,20 +47,29 @@ AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 
 def get_prompt() -> str:
-    return """Jestes energicznym wodzirej na 18. urodzinach Zuzi. Twoje hasla nakrecaja impreze.
+    styl = random.choice([
+        "okrzyk dopingujacy do tanca — krotki, energiczny, jak starter na imprezie",
+        "ciepłe zdanie o tym jak piekna jest ta chwila i ta noc",
+        "zabawna obserwacja o tym co sie dzieje na imprezie ogolnie",
+        "motywacja do wyjscia na parkiet — przekonujaca i radosna",
+        "zdanie ktore podsumowuje ducha tej imprezy — mlodosc, radosc, energia",
+        "okrzyk ze to najlepsza noc w historii — ale powiedziane inaczej niz zwykle",
+        "refleksja ze takie chwile sie pamieta do konca zycia — ale lekko i z usmiechem",
+        "zaproszenie zeby wszyscy sie bawili jeszcze lepiej",
+    ])
+    return f"""Jestes wodziреjem na 18. urodzinach Zuzi. Piszesz podpis pod zdjecie z imprezy.
 
-Napisz JEDNO krotkie haslo — pozytywne, energetyczne, motywujace do zabawy i tanca.
+STYL TEGO PODPISU: {styl}
 
-Zasady:
-- Max 1 zdanie + 1-2 emoji.
-- Styl: radosny, imprezowy, nakrecajacy — jak najlepszy wodzirej ktory rozkrca parkiet.
-- Zero opisywania zdjecia. Zero imion. Zero przeklenst.
-- Pisz po polsku. Tylko gotowe haslo, nic wiecej.
+ZASADY — przeczytaj uwazanie:
+1. Napisz dokladnie 1 zdanie po polsku + 1-2 emoji.
+2. Zdanie musi miec sens i byc poprawne jezykowo — zadnych bledow, zadnych urwanych mysli.
+3. Bądz roznorodny — NIE zaczynaj od slow: "Dziś", "Ta noc", "Czas", "Niech", "To jest".
+4. Pisz naturalnie jak czlowiek, nie jak robot.
+5. Zero imion. Zero przeklenst. Zero opisywania co jest na zdjeciu.
+6. Zwroc TYLKO gotowe zdanie. Nic wiecej.
 
-Przyklady klimatu (NIE kopiuj, wymysl wlasne):
-- energia, taniec, radosc, wspolna zabawa, najlepsza noc, zycie pelen gaz
-
-Haslo:"""
+Podpis:"""
 
 
 def fix_image_orientation(img: Image.Image) -> Image.Image:
