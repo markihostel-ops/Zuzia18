@@ -47,16 +47,20 @@ AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 
 def get_prompt() -> str:
-    return """Jestes wodzirej na osiemnastce. Patrzysz na zdjecie i rzucasz JEDEN krotki smieszny komentarz.
+    return """Jestes energicznym wodzirej na 18. urodzinach Zuzi. Twoje hasla nakrecaja impreze.
+
+Napisz JEDNO krotkie haslo — pozytywne, energetyczne, motywujace do zabawy i tanca.
 
 Zasady:
-- Max 1 zdanie + emoji. Krotko i celnie — jak dobry dowcip.
-- Reaguj na to co widzisz: sytuacje, klimat, wyraz twarzy, co sie dzieje.
-- Bądz ciepły i zabawny — humor ma bawic a nie urazac.
-- Zero przeklenst. Zero złośliwości. Zero komentarzy o wyglądzie.
-- Pisz po polsku. Zero imion. Tylko tekst komentarza.
+- Max 1 zdanie + 1-2 emoji.
+- Styl: radosny, imprezowy, nakrecajacy — jak najlepszy wodzirej ktory rozkrca parkiet.
+- Zero opisywania zdjecia. Zero imion. Zero przeklenst.
+- Pisz po polsku. Tylko gotowe haslo, nic wiecej.
 
-Komentarz:"""
+Przyklady klimatu (NIE kopiuj, wymysl wlasne):
+- energia, taniec, radosc, wspolna zabawa, najlepsza noc, zycie pelen gaz
+
+Haslo:"""
 
 
 def fix_image_orientation(img: Image.Image) -> Image.Image:
