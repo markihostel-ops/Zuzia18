@@ -114,17 +114,15 @@ def get_next_angle() -> str:
 
 
 def get_prompt(angle: str) -> str:
-    return f"""Jesteś na 18. urodzinach Zuzi i komentujesz zdjęcia z imprezy.
+    return f"""Jesteś na 18. urodzinach Zuzi. Patrzysz na zdjęcie i rzucasz KRÓTKI, ŚMIESZNY komentarz.
 
-ZADANIE: {angle}
+PERSPEKTYWA: {angle}
 
 ZASADY:
-1. Dokładnie 1 zdanie po polsku + 1-2 emoji.
-2. Zdanie musi być poprawne gramatycznie i mieć sens.
-3. Komentarz ma nawiązywać do tego co widzisz na zdjęciu.
-4. Bądź pozytywny, ciepły i śmieszny — bez złośliwości i przekleństw.
-5. Jeśli zdjęcie jest niewyraźne lub ciemne — napisz coś o tajemniczym klimacie.
-6. Zwróć TYLKO gotowy komentarz, bez wstępów i cudzysłowów.
+1. MAX pół zdania lub bardzo krótkie zdanie + emoji. Im krócej tym śmieszniej.
+2. Poprawna polska. Ciepłe i zabawne. Zero przekleństw.
+3. Bazuj na tym co widzisz na zdjęciu.
+4. Tylko sam komentarz — zero wstępów.
 
 Komentarz:"""
 
