@@ -49,41 +49,40 @@ DEFAULT_SLIDE_DELAY = 7
 AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 ALL_ANGLES = [
-    "Napisz komentarz jakbyś czytał myśli osoby na zdjęciu na głos — co właśnie myśli",
-    "Napisz komentarz jak nagłówek pilnych wiadomości w telewizji",
-    "Napisz komentarz jak biolog obserwujący rzadki gatunek w naturalnym środowisku",
-    "Napisz komentarz jak sędzia sportowy wystawiający oceny za styl i technikę",
-    "Napisz komentarz jak recenzent filmowy opisujący scenę godną Oscara",
-    "Napisz komentarz jak prognoza pogody — ale dla nastroju na zdjęciu",
-    "Napisz komentarz jak opis z katalogu IKEA dla przedmiotu o nazwie ZABAWA",
-    "Napisz komentarz jak geolog opisujący trzęsienie ziemi na parkiecie",
-    "Napisz komentarz jak instrukcja obsługi urządzenia pracującego na pełnych obrotach",
-    "Napisz komentarz jak sommelier oceniający rocznik tej imprezy",
-    "Napisz komentarz jak komentarz z przyszłości — za 20 lat ktoś ogląda to zdjęcie",
-    "Napisz komentarz jak dietetyk liczący kalorie spalone na parkiecie",
-    "Napisz komentarz jak trener fitness oceniający technikę tańca",
-    "Napisz komentarz jak przewodnik turystyczny opisujący obowiązkową atrakcję",
-    "Napisz komentarz jak prawnik sporządzający oficjalne oświadczenie o zabawie",
-    "Napisz komentarz jak astronom obserwujący energię widoczną z kosmosu",
-    "Napisz komentarz jak reżyser wołający cięcie bo scena była zbyt dobra",
-    "Napisz komentarz jak archiwista opisujący dokument o znaczeniu historycznym",
-    "Napisz komentarz jak kucharz opisujący przepis na tę chwilę",
-    "Napisz komentarz jak mechanik oceniający silnik imprezy pracujący na pełnych obrotach",
-    "Napisz komentarz jak świadectwo szkolne z oceną za zabawę",
-    "Napisz komentarz jak opis z aukcji dzieł sztuki — unikat, cena bezcenna",
-    "Napisz komentarz jak weterynarz badający pacjenta w doskonałej formie",
-    "Napisz komentarz jak detektyw który właśnie odkrył kluczowy dowód w sprawie",
-    "Napisz komentarz jak narrator bajki — i żyli długo i tańczyli szczęśliwie",
-    "Napisz komentarz jak opis ze słownika — definicja słowa impreza to właśnie to",
-    "Napisz komentarz jak meteorolog opisujący burzę na parkiecie",
-    "Napisz komentarz jak fotograf który właśnie złapał najlepszy kadr w karierze",
-    "Napisz komentarz jak opis z menu restauracji — danie dnia to czysta radość",
-    "Napisz komentarz jak architekt oceniający solidność konstrukcji tej imprezy",
+    "sytuacyjny — zareaguj na konkretną sytuację ze zdjęcia jednym celnym zdaniem jakbyś był świadkiem czegoś niewiarygodnego",
+    "absurdalny — skomentuj zdjęcie w zupełnie nieoczekiwany, bezsensowny ale zabawny sposób",
+    "życiowy — powiedz coś mądrego i śmiesznego zarazem o tym co pokazuje zdjęcie",
+    "imprezowy — zażartuj o tańcu i zabawie nawiązując do zdjęcia",
+    "głupi i dziecinny — napisz coś totalnie prostego i głupiego ale przez to śmiesznego",
+    "jak nagłówek pilnych wiadomości w telewizji",
+    "jak biolog obserwujący rzadki gatunek w naturalnym środowisku",
+    "jak sędzia sportowy wystawiający oceny za styl i technikę",
+    "jak recenzent filmowy opisujący scenę godną Oscara",
+    "jak prognoza pogody — ale dla nastroju na zdjęciu",
+    "jak opis z katalogu IKEA dla przedmiotu o nazwie ZABAWA",
+    "jak geolog opisujący trzęsienie ziemi na parkiecie",
+    "jak instrukcja obsługi urządzenia pracującego na pełnych obrotach",
+    "jak sommelier oceniający rocznik tej imprezy",
+    "jak komentarz z przyszłości — za 20 lat ktoś ogląda to zdjęcie",
+    "jak dietetyk liczący kalorie spalone na parkiecie",
+    "jak trener fitness oceniający technikę tańca",
+    "jak przewodnik turystyczny opisujący obowiązkową atrakcję",
+    "jak prawnik sporządzający oficjalne oświadczenie o zabawie",
+    "jak astronom obserwujący energię widoczną z kosmosu",
+    "jak reżyser wołający cięcie bo scena była zbyt dobra",
+    "jak archiwista opisujący dokument o znaczeniu historycznym",
+    "jak kucharz opisujący przepis na tę chwilę",
+    "jak mechanik oceniający silnik imprezy na pełnych obrotach",
+    "jak opis z aukcji dzieł sztuki — unikat, cena bezcenna",
+    "jak weterynarz badający pacjenta w doskonałej formie",
+    "jak detektyw który właśnie odkrył kluczowy dowód w sprawie",
+    "jak fotograf który właśnie złapał najlepszy kadr w karierze",
+    "jak opis z menu restauracji — danie dnia to czysta radość",
+    "jak architekt oceniający solidność konstrukcji tej imprezy",
 ]
 
 
 def get_next_angle() -> str:
-    """Losuje kąt widzenia unikając ostatnich 5 użytych."""
     lock = FileLock(ANGLES_LOCK)
     with lock:
         used = []
@@ -93,37 +92,26 @@ def get_next_angle() -> str:
                     used = [line.strip() for line in f if line.strip()]
             except Exception:
                 used = []
-
         available = [a for a in ALL_ANGLES if a not in used[-5:]]
         if not available:
             available = ALL_ANGLES.copy()
-
         angle = random.choice(available)
         used.append(angle)
         if len(used) > 10:
             used = used[-10:]
-
         try:
             with open(USED_ANGLES_FILE, "w", encoding="utf-8") as f:
                 for item in used:
                     f.write(f"{item}\n")
         except Exception:
             pass
-
     return angle
 
 
 def get_prompt(angle: str) -> str:
-    styl = random.choice([
-        "sytuacyjny — zareaguj na konkretną sytuację ze zdjęcia jednym celnym zdaniem jakbyś był świadkiem czegoś niewiarygodnego",
-        "absurdalny — skomentuj zdjęcie w zupełnie nieoczekiwany, bezsensowny ale zabawny sposób",
-        "życiowy — powiedz coś mądrego i śmiesznego zarazem o tym co pokazuje zdjęcie w kontekście życia i imprez",
-        "imprezowy — zażartuj o alkoholu, tańcu, zabawie i nocy która się nie kończy nawiązując do zdjęcia",
-        "głupi i dziecinny — napisz coś totalnie prostego i głupiego ale przez to śmiesznego nawiązując do zdjęcia",
-    ])
     return f"""Jesteś na 18. urodzinach Zuzi. Patrzysz na zdjęcie i rzucasz KRÓTKI ŚMIESZNY komentarz.
 
-STYL: {styl}
+STYL: {angle}
 
 ZASADY:
 1. Maksymalnie 1 krótkie zdanie + emoji. Im krótszy tym lepszy.
@@ -135,31 +123,10 @@ Komentarz:"""
 
 
 def fix_image_orientation(img: Image.Image) -> Image.Image:
-    """Naprawia orientację przez EXIF i upewnia się że zdjęcie jest zawsze prosto."""
     try:
         img = ImageOps.exif_transpose(img)
     except Exception:
-        try:
-            exif = img._getexif()
-            if exif:
-                orientation_key = next(
-                    (k for k, v in ExifTags.TAGS.items() if v == "Orientation"), None
-                )
-                if orientation_key and orientation_key in exif:
-                    orientation = exif[orientation_key]
-                    rotations = {
-                        2: lambda i: i.transpose(Image.FLIP_LEFT_RIGHT),
-                        3: lambda i: i.rotate(180),
-                        4: lambda i: i.rotate(180).transpose(Image.FLIP_LEFT_RIGHT),
-                        5: lambda i: i.rotate(-90, expand=True).transpose(Image.FLIP_LEFT_RIGHT),
-                        6: lambda i: i.rotate(-90, expand=True),
-                        7: lambda i: i.rotate(90, expand=True).transpose(Image.FLIP_LEFT_RIGHT),
-                        8: lambda i: i.rotate(90, expand=True),
-                    }
-                    if orientation in rotations:
-                        img = rotations[orientation](img)
-        except Exception:
-            pass
+        pass
     return img
 
 
@@ -283,13 +250,11 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
     if not anthropic_key:
         update_caption(image_url, FALLBACK_CAPTION)
         return
-
     start = time.time()
     image_bytes_ai = compress_for_ai(img_pil)
     image_b64 = base64.standard_b64encode(image_bytes_ai).decode("utf-8")
     angle = get_next_angle()
     prompt = get_prompt(angle)
-
     for attempt in range(3):
         if time.time() - start > AI_TIMEOUT_SEC:
             break
@@ -322,7 +287,6 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
                 return
         except Exception:
             time.sleep(2)
-
     update_caption(image_url, FALLBACK_CAPTION)
 
 
@@ -393,6 +357,8 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
     st.info(f"📸 Wrzucaj maksymalnie {MAX_PHOTOS} zdjec na raz — jak sie wyswietla, mozesz wrzucic kolejne!")
 
     brakujace = []
+    if not anthropic_key:
+        brakujace.append("ANTHROPIC_API_KEY")
     if not cloud_name:
         brakujace.append("CLOUDINARY_CLOUD_NAME")
     if not cloudinary_key:
@@ -462,11 +428,15 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
 # ─── Widok: Projektor (DJ) ────────────────────────────────────────────────────
 
 else:
-    st.title("Ekran Projektora - Pokaz na Zywo")
-    st_autorefresh(interval=3000, key="dj_autorefresh")
+    st.markdown("""
+        <style>
+        [data-testid="stSidebar"] {display: none;}
+        .stApp > header {display: none;}
+        .block-container {padding: 0 !important; max-width: 100% !important;}
+        </style>
+    """, unsafe_allow_html=True)
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Zarzadzanie zdjeciami")
+    st_autorefresh(interval=3000, key="dj_autorefresh")
 
     items = load_gallery()
     current_count = len(items)
@@ -476,71 +446,43 @@ else:
         st.session_state.last_known_count = current_count
 
     if items:
-        for idx, it in enumerate(items):
-            col_txt, col_btn = st.sidebar.columns([3, 1])
-            col_txt.text(f"#{idx + 1}: {it['caption'][:20]}...")
-            if col_btn.button("Skasuj", key=f"del_{idx}"):
-                items.pop(idx)
-                save_full_gallery(items)
-                st.session_state.current_index = 0
-                st.session_state.last_known_count = len(items)
-                st.rerun()
-
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Ustawienia Pokazu")
-    auto_play = st.sidebar.checkbox("Automatyczna zmiana slajdow", value=True, key="auto_play")
-    slide_delay_sec = st.sidebar.slider("Czas wyswietlania (sekundy)", 3, 15, DEFAULT_SLIDE_DELAY, key="slide_delay")
-
-    if items:
         if st.session_state.current_index >= len(items):
             st.session_state.current_index = 0
 
         idx = st.session_state.current_index
         item = items[idx]
 
-        display_url = item["url"].replace("/upload/", "/upload/w_1200,q_auto,f_auto/")
+        display_url = item["url"].replace("/upload/", "/upload/w_1920,q_auto,f_auto/")
+        next_idx = (idx + 1) % len(items)
+        next_url = items[next_idx]["url"].replace("/upload/", "/upload/w_1920,q_auto,f_auto/")
 
+        clean_caption = item["caption"].replace("**", "").replace('"', '').strip()
+        if clean_caption == PLACEHOLDER_CAPTION:
+            caption_html = "<span style='color:#888;'>✍️ Zaraz skomentuje...</span>"
+        else:
+            caption_html = clean_caption
+
+        st.markdown(f"""
+        <link rel="prefetch" href="{next_url}">
+        <div style="display:flex;align-items:center;justify-content:center;
+                    height:100vh;background:#000;overflow:hidden;">
+            <img src="{display_url}"
+                 style="height:100vh;max-width:80vw;object-fit:contain;flex-shrink:0;">
+            <div style="flex:1;padding:3vw;min-width:15vw;max-width:22vw;">
+                <p style="font-size:3.2vw;font-weight:bold;color:#fff;
+                          line-height:1.4;margin:0 0 3vh 0;">{caption_html}</p>
+                <p style="font-size:1.2vw;color:#444;margin:0;">{idx+1} / {len(items)}</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        now = time.time()
+        if len(items) > 1 and now - st.session_state.last_slide_time >= DEFAULT_SLIDE_DELAY:
+            st.session_state.current_index = (idx + 1) % len(items)
+            st.session_state.last_slide_time = now
+            st.rerun()
+    else:
         st.markdown(
-            """
-            <style>
-            .stApp img {
-                max-height: 70vh !important;
-                width: auto !important;
-                margin: 0 auto;
-                display: block;
-                object-fit: contain;
-                border-radius: 12px;
-            }
-            </style>
-            """,
+            "<h2 style='text-align:center;margin-top:40vh;color:#fff;'>Czekamy na pierwsze zdjecia! 📸</h2>",
             unsafe_allow_html=True,
         )
-
-        next_idx = (idx + 1) % len(items)
-        next_url = items[next_idx]["url"].replace("/upload/", "/upload/w_1200,q_auto,f_auto/")
-        st.markdown(f'<link rel="prefetch" href="{next_url}">', unsafe_allow_html=True)
-
-        col1, col2, col3 = st.columns([0.5, 5, 0.5])
-        with col2:
-            st.image(display_url, use_container_width=True)
-            clean_caption = item["caption"].replace("**", "").replace('"', '').strip()
-            if clean_caption == PLACEHOLDER_CAPTION:
-                st.markdown(
-                    "<h2 style='text-align: center; margin-top: 15px; color: #aaa;'>✍️ Zaraz skomentuje...</h2>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    f"<h2 style='text-align: center; margin-top: 15px;'>{clean_caption}</h2>",
-                    unsafe_allow_html=True,
-                )
-            st.caption(f"Zdjecie {idx + 1} z {len(items)}")
-
-        if auto_play and len(items) > 1:
-            now = time.time()
-            if now - st.session_state.last_slide_time >= slide_delay_sec:
-                st.session_state.current_index = (idx + 1) % len(items)
-                st.session_state.last_slide_time = now
-                st.rerun()
-    else:
-        st.info("Czekamy na pierwsze zdjecia! Wrzuc cos ze swojego telefonu.")
