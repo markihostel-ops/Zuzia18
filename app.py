@@ -114,15 +114,22 @@ def get_next_angle() -> str:
 
 
 def get_prompt(angle: str) -> str:
-    return f"""Jesteś na 18. urodzinach Zuzi. Patrzysz na zdjęcie i rzucasz KRÓTKI, ŚMIESZNY komentarz.
+    styl = random.choice([
+        "sytuacyjny — zareaguj na konkretną sytuację ze zdjęcia jednym celnym zdaniem jakbyś był świadkiem czegoś niewiarygodnego",
+        "absurdalny — skomentuj zdjęcie w zupełnie nieoczekiwany, bezsensowny ale zabawny sposób",
+        "życiowy — powiedz coś mądrego i śmiesznego zarazem o tym co pokazuje zdjęcie w kontekście życia i imprez",
+        "imprezowy — zażartuj o alkoholu, tańcu, zabawie i nocy która się nie kończy nawiązując do zdjęcia",
+        "głupi i dziecinny — napisz coś totalnie prostego i głupiego ale przez to śmiesznego nawiązując do zdjęcia",
+    ])
+    return f"""Jesteś na 18. urodzinach Zuzi. Patrzysz na zdjęcie i rzucasz KRÓTKI ŚMIESZNY komentarz.
 
-PERSPEKTYWA: {angle}
+STYL: {styl}
 
 ZASADY:
-1. MAX pół zdania lub bardzo krótkie zdanie + emoji. Im krócej tym śmieszniej.
-2. Poprawna polska. Ciepłe i zabawne. Zero przekleństw.
-3. Bazuj na tym co widzisz na zdjęciu.
-4. Tylko sam komentarz — zero wstępów.
+1. Maksymalnie 1 krótkie zdanie + emoji. Im krótszy tym lepszy.
+2. Poprawna polszczyzna. Zero przekleństw. Zero imion.
+3. Nawiąż do tego co widzisz na zdjęciu.
+4. Tylko gotowy komentarz, nic więcej.
 
 Komentarz:"""
 
