@@ -1,11 +1,11 @@
 import os
 import time
 import base64
-from io import BytesIO
 import random
+from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
 
-from PIL import Image, ExifTags
+from PIL import Image, ExifTags, ImageOps
 try:
     from pillow_heif import register_heif_opener
     register_heif_opener()
@@ -36,57 +36,125 @@ if cloud_name and cloudinary_key and cloudinary_secret:
 
 DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
+USED_ANGLES_FILE = "used_angles.txt"
+ANGLES_LOCK = "angles.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
 PLACEHOLDER_CAPTION = "Zaraz skomentuje... 👀"
+FALLBACK_CAPTION = "Zuzia 18 🎉"
 MAX_PHOTOS = 10
 MAX_CAPTION_LEN = 150
 AI_TIMEOUT_SEC = 55
+DEFAULT_SLIDE_DELAY = 7
 
 AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
+ALL_ANGLES = [
+    "Napisz komentarz jakbyś czytał myśli osoby na zdjęciu na głos — co właśnie myśli",
+    "Napisz komentarz jak nagłówek pilnych wiadomości w telewizji",
+    "Napisz komentarz jak biolog obserwujący rzadki gatunek w naturalnym środowisku",
+    "Napisz komentarz jak sędzia sportowy wystawiający oceny za styl i technikę",
+    "Napisz komentarz jak recenzent filmowy opisujący scenę godną Oscara",
+    "Napisz komentarz jak prognoza pogody — ale dla nastroju na zdjęciu",
+    "Napisz komentarz jak opis z katalogu IKEA dla przedmiotu o nazwie ZABAWA",
+    "Napisz komentarz jak geolog opisujący trzęsienie ziemi na parkiecie",
+    "Napisz komentarz jak instrukcja obsługi urządzenia pracującego na pełnych obrotach",
+    "Napisz komentarz jak sommelier oceniający rocznik tej imprezy",
+    "Napisz komentarz jak komentarz z przyszłości — za 20 lat ktoś ogląda to zdjęcie",
+    "Napisz komentarz jak dietetyk liczący kalorie spalone na parkiecie",
+    "Napisz komentarz jak trener fitness oceniający technikę tańca",
+    "Napisz komentarz jak przewodnik turystyczny opisujący obowiązkową atrakcję",
+    "Napisz komentarz jak prawnik sporządzający oficjalne oświadczenie o zabawie",
+    "Napisz komentarz jak astronom obserwujący energię widoczną z kosmosu",
+    "Napisz komentarz jak reżyser wołający cięcie bo scena była zbyt dobra",
+    "Napisz komentarz jak archiwista opisujący dokument o znaczeniu historycznym",
+    "Napisz komentarz jak kucharz opisujący przepis na tę chwilę",
+    "Napisz komentarz jak mechanik oceniający silnik imprezy pracujący na pełnych obrotach",
+    "Napisz komentarz jak świadectwo szkolne z oceną za zabawę",
+    "Napisz komentarz jak opis z aukcji dzieł sztuki — unikat, cena bezcenna",
+    "Napisz komentarz jak weterynarz badający pacjenta w doskonałej formie",
+    "Napisz komentarz jak detektyw który właśnie odkrył kluczowy dowód w sprawie",
+    "Napisz komentarz jak narrator bajki — i żyli długo i tańczyli szczęśliwie",
+    "Napisz komentarz jak opis ze słownika — definicja słowa impreza to właśnie to",
+    "Napisz komentarz jak meteorolog opisujący burzę na parkiecie",
+    "Napisz komentarz jak fotograf który właśnie złapał najlepszy kadr w karierze",
+    "Napisz komentarz jak opis z menu restauracji — danie dnia to czysta radość",
+    "Napisz komentarz jak architekt oceniający solidność konstrukcji tej imprezy",
+]
 
 
-def get_prompt() -> str:
-    return """Jestes na 18. urodzinach Zuzi i komentujesz zdjecia z imprezy.
+def get_next_angle() -> str:
+    """Losuje kąt widzenia unikając ostatnich 5 użytych."""
+    lock = FileLock(ANGLES_LOCK)
+    with lock:
+        used = []
+        if os.path.exists(USED_ANGLES_FILE):
+            try:
+                with open(USED_ANGLES_FILE, "r", encoding="utf-8") as f:
+                    used = [line.strip() for line in f if line.strip()]
+            except Exception:
+                used = []
 
-Napisz jeden krotki, zabawny i ciepły komentarz do tego konkretnego zdjecia.
+        available = [a for a in ALL_ANGLES if a not in used[-5:]]
+        if not available:
+            available = ALL_ANGLES.copy()
+
+        angle = random.choice(available)
+        used.append(angle)
+        if len(used) > 10:
+            used = used[-10:]
+
+        try:
+            with open(USED_ANGLES_FILE, "w", encoding="utf-8") as f:
+                for item in used:
+                    f.write(f"{item}\n")
+        except Exception:
+            pass
+
+    return angle
+
+
+def get_prompt(angle: str) -> str:
+    return f"""Jesteś na 18. urodzinach Zuzi i komentujesz zdjęcia z imprezy.
+
+ZADANIE: {angle}
 
 ZASADY:
-1. Dokladnie 1 zdanie + 1-2 emoji.
-2. Komentarz musi byc zwiazany z tym co widzisz na zdjeciu — sytuacja, nastroj, co sie dzieje, miny ludzi.
-3. Pisz poprawnie po polsku — pelne zdanie z sensem, nie urwane haslo.
-4. Bądz pozytywny, ciepły i smieszny — bez zlosliwosci, bez przeklenst.
-5. Bądz kreatywny — kazde zdjecie to inna reakcja, inny styl, inne slowa.
-6. NIE zaczynaj od: Dzis, Ta noc, Czas na, Niech, To jest, Wszyscy, Oto.
-7. Zero imion. Tylko gotowy komentarz, bez wstepow.
+1. Dokładnie 1 zdanie po polsku + 1-2 emoji.
+2. Zdanie musi być poprawne gramatycznie i mieć sens.
+3. Komentarz ma nawiązywać do tego co widzisz na zdjęciu.
+4. Bądź pozytywny, ciepły i śmieszny — bez złośliwości i przekleństw.
+5. Jeśli zdjęcie jest niewyraźne lub ciemne — napisz coś o tajemniczym klimacie.
+6. Zwróć TYLKO gotowy komentarz, bez wstępów i cudzysłowów.
 
 Komentarz:"""
 
 
 def fix_image_orientation(img: Image.Image) -> Image.Image:
+    """Naprawia orientację przez EXIF i upewnia się że zdjęcie jest zawsze prosto."""
     try:
-        exif = img._getexif()
-        if exif is None:
-            return img
-        orientation_key = next(
-            (k for k, v in ExifTags.TAGS.items() if v == "Orientation"), None
-        )
-        if orientation_key is None or orientation_key not in exif:
-            return img
-        orientation = exif[orientation_key]
-        rotations = {
-            2: lambda i: i.transpose(Image.FLIP_LEFT_RIGHT),
-            3: lambda i: i.rotate(180),
-            4: lambda i: i.rotate(180).transpose(Image.FLIP_LEFT_RIGHT),
-            5: lambda i: i.rotate(-90, expand=True).transpose(Image.FLIP_LEFT_RIGHT),
-            6: lambda i: i.rotate(-90, expand=True),
-            7: lambda i: i.rotate(90, expand=True).transpose(Image.FLIP_LEFT_RIGHT),
-            8: lambda i: i.rotate(90, expand=True),
-        }
-        if orientation in rotations:
-            img = rotations[orientation](img)
+        img = ImageOps.exif_transpose(img)
     except Exception:
-        pass
+        try:
+            exif = img._getexif()
+            if exif:
+                orientation_key = next(
+                    (k for k, v in ExifTags.TAGS.items() if v == "Orientation"), None
+                )
+                if orientation_key and orientation_key in exif:
+                    orientation = exif[orientation_key]
+                    rotations = {
+                        2: lambda i: i.transpose(Image.FLIP_LEFT_RIGHT),
+                        3: lambda i: i.rotate(180),
+                        4: lambda i: i.rotate(180).transpose(Image.FLIP_LEFT_RIGHT),
+                        5: lambda i: i.rotate(-90, expand=True).transpose(Image.FLIP_LEFT_RIGHT),
+                        6: lambda i: i.rotate(-90, expand=True),
+                        7: lambda i: i.rotate(90, expand=True).transpose(Image.FLIP_LEFT_RIGHT),
+                        8: lambda i: i.rotate(90, expand=True),
+                    }
+                    if orientation in rotations:
+                        img = rotations[orientation](img)
+        except Exception:
+            pass
     return img
 
 
@@ -208,12 +276,15 @@ def upload_to_cloudinary(upload_buf: BytesIO) -> str:
 
 def generate_caption_for_url(image_url: str, img_pil: Image.Image):
     if not anthropic_key:
-        update_caption(image_url, "Ekipa bawi sie wysmienicie! 🎉🔥")
+        update_caption(image_url, FALLBACK_CAPTION)
         return
+
     start = time.time()
     image_bytes_ai = compress_for_ai(img_pil)
     image_b64 = base64.standard_b64encode(image_bytes_ai).decode("utf-8")
-    prompt = get_prompt()
+    angle = get_next_angle()
+    prompt = get_prompt(angle)
+
     for attempt in range(3):
         if time.time() - start > AI_TIMEOUT_SEC:
             break
@@ -246,7 +317,8 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
                 return
         except Exception:
             time.sleep(2)
-    update_caption(image_url, "Ekipa bawi sie wysmienicie! 🎉🔥")
+
+    update_caption(image_url, FALLBACK_CAPTION)
 
 
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
@@ -275,8 +347,9 @@ else:
             with lock:
                 if os.path.exists(DB_FILE):
                     os.remove(DB_FILE)
-            if os.path.exists(QUEUE_FILE):
-                os.remove(QUEUE_FILE)
+            for f in [USED_ANGLES_FILE]:
+                if os.path.exists(f):
+                    os.remove(f)
             if cloud_name and cloudinary_key and cloudinary_secret:
                 try:
                     resources = cloudinary.api.resources(
@@ -314,10 +387,7 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
     st.header("Wrzuc fotki na zywo na ekran projektora!")
     st.info(f"📸 Wrzucaj maksymalnie {MAX_PHOTOS} zdjec na raz — jak sie wyswietla, mozesz wrzucic kolejne!")
 
-    # Sprawdz klucze i pokaz co brakuje
     brakujace = []
-    if not anthropic_key:
-        brakujace.append("ANTHROPIC_API_KEY")
     if not cloud_name:
         brakujace.append("CLOUDINARY_CLOUD_NAME")
     if not cloudinary_key:
@@ -414,7 +484,7 @@ else:
     st.sidebar.markdown("---")
     st.sidebar.subheader("Ustawienia Pokazu")
     auto_play = st.sidebar.checkbox("Automatyczna zmiana slajdow", value=True, key="auto_play")
-    slide_delay_sec = st.sidebar.slider("Czas wyswietlania (sekundy)", 3, 15, 5, key="slide_delay")
+    slide_delay_sec = st.sidebar.slider("Czas wyswietlania (sekundy)", 3, 15, DEFAULT_SLIDE_DELAY, key="slide_delay")
 
     if items:
         if st.session_state.current_index >= len(items):
