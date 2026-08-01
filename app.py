@@ -82,13 +82,16 @@ def get_prompt() -> str:
 
 STYL: {angle}
 
-ZASADY:
-1. Maksymalnie 1 krótkie zdanie + emoji. Im krótszy tym lepszy.
-2. Poprawna polszczyzna. Zero przekleństw. Zero imion.
-3. Nawiąż do tego co widzisz na zdjęciu.
-4. Tylko gotowy komentarz, nic więcej.
+ZASADY — PRZECZYTAJ UWAŻNIE:
+1. Napisz WYŁĄCZNIE po polsku. Każde słowo musi być poprawnym słowem języka polskiego.
+2. NIE używaj słów z innych języków — ani angielskich, ani ukraińskich, ani żadnych innych.
+3. NIE wymyślaj słów które nie istnieją w języku polskim.
+4. Maksymalnie 1 krótkie zdanie + emoji.
+5. Zero przekleństw. Zero imion.
+6. Nawiąż do tego co widzisz na zdjęciu.
+7. Tylko gotowy komentarz, nic więcej.
 
-Komentarz:"""
+Komentarz po polsku:"""
 
 
 def fix_image_orientation(img: Image.Image) -> Image.Image:
