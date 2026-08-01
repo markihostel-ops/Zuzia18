@@ -303,6 +303,8 @@ for key, default in [
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 st.sidebar.title("Panel Sterowania")
+st.sidebar.write("AI:", "OK" if anthropic_key else "BRAK")
+st.sidebar.write("Cloudinary:", "OK" if cloud_name else "BRAK")
 
 view_mode = st.sidebar.radio(
     "Wybierz widok:",
