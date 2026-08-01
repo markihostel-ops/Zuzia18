@@ -1,17 +1,12 @@
 import os
 import time
 import base64
+import threading
 import random
 from io import BytesIO
-import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image, ExifTags, ImageOps
-try:
-    from pillow_heif import register_heif_opener
-    register_heif_opener()
-except ImportError:
-    pass
-
 import cloudinary
 import cloudinary.api
 import cloudinary.uploader
@@ -36,16 +31,12 @@ if cloud_name and cloudinary_key and cloudinary_secret:
 
 DB_FILE = "galeria_zuzi.txt"
 LOCK_FILE = "galeria.lock"
-USED_ANGLES_FILE = "used_angles.txt"
-ANGLES_LOCK = "angles.lock"
 CLOUDINARY_FOLDER = "18_zuzia"
 PLACEHOLDER_CAPTION = "Zaraz skomentuje... 👀"
-FALLBACK_CAPTION = "Zuzia 18 🎉"
 MAX_PHOTOS = 10
-MAX_CAPTION_LEN = 150
-AI_TIMEOUT_SEC = 55
 DEFAULT_SLIDE_DELAY = 7
 
+AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 ALL_ANGLES = [
     "sytuacyjny — zareaguj na konkretną sytuację ze zdjęcia jednym celnym zdaniem",
@@ -82,32 +73,11 @@ ALL_ANGLES = [
 
 
 def get_next_angle() -> str:
-    lock = FileLock(ANGLES_LOCK)
-    with lock:
-        used = []
-        if os.path.exists(USED_ANGLES_FILE):
-            try:
-                with open(USED_ANGLES_FILE, "r", encoding="utf-8") as f:
-                    used = [line.strip() for line in f if line.strip()]
-            except Exception:
-                used = []
-        available = [a for a in ALL_ANGLES if a not in used[-5:]]
-        if not available:
-            available = ALL_ANGLES.copy()
-        angle = random.choice(available)
-        used.append(angle)
-        if len(used) > 10:
-            used = used[-10:]
-        try:
-            with open(USED_ANGLES_FILE, "w", encoding="utf-8") as f:
-                for item in used:
-                    f.write(f"{item}\n")
-        except Exception:
-            pass
-    return angle
+    return random.choice(ALL_ANGLES)
 
 
-def get_prompt(angle: str) -> str:
+def get_prompt() -> str:
+    angle = get_next_angle()
     return f"""Jesteś na 18. urodzinach Zuzi. Patrzysz na zdjęcie i rzucasz KRÓTKI ŚMIESZNY komentarz.
 
 STYL: {angle}
@@ -125,7 +95,27 @@ def fix_image_orientation(img: Image.Image) -> Image.Image:
     try:
         img = ImageOps.exif_transpose(img)
     except Exception:
-        pass
+        try:
+            exif = img._getexif()
+            if exif:
+                orientation_key = next(
+                    (k for k, v in ExifTags.TAGS.items() if v == "Orientation"), None
+                )
+                if orientation_key and orientation_key in exif:
+                    orientation = exif[orientation_key]
+                    rotations = {
+                        2: lambda i: i.transpose(Image.FLIP_LEFT_RIGHT),
+                        3: lambda i: i.rotate(180),
+                        4: lambda i: i.rotate(180).transpose(Image.FLIP_LEFT_RIGHT),
+                        5: lambda i: i.rotate(-90, expand=True).transpose(Image.FLIP_LEFT_RIGHT),
+                        6: lambda i: i.rotate(-90, expand=True),
+                        7: lambda i: i.rotate(90, expand=True).transpose(Image.FLIP_LEFT_RIGHT),
+                        8: lambda i: i.rotate(90, expand=True),
+                    }
+                    if orientation in rotations:
+                        img = rotations[orientation](img)
+        except Exception:
+            pass
     return img
 
 
@@ -158,18 +148,6 @@ def compress_for_projector(img: Image.Image) -> BytesIO:
     return buf
 
 
-def compress_for_ai(img: Image.Image) -> bytes:
-    img_r = resize_to(img, 800)
-    quality = 80
-    while True:
-        buf = BytesIO()
-        img_r.save(buf, format="JPEG", quality=quality, optimize=True)
-        if buf.tell() / 1024 <= 300 or quality <= 40:
-            break
-        quality -= 6
-    return buf.getvalue()
-
-
 def load_gallery():
     if not os.path.exists(DB_FILE):
         return []
@@ -200,8 +178,6 @@ def save_item(url, caption):
 
 
 def update_caption(url, new_caption):
-    if len(new_caption) > MAX_CAPTION_LEN:
-        new_caption = new_caption[:MAX_CAPTION_LEN].rsplit(" ", 1)[0] + "..."
     lock = FileLock(LOCK_FILE)
     try:
         with lock:
@@ -230,36 +206,26 @@ def save_full_gallery(items):
         st.error(f"Blad zapisu: {e}")
 
 
-def upload_to_cloudinary(upload_buf: BytesIO) -> str:
-    for attempt in range(3):
-        try:
-            upload_buf.seek(0)
-            result = cloudinary.uploader.upload(upload_buf, folder=CLOUDINARY_FOLDER)
-            url = result.get("secure_url", "")
-            if url:
-                return url
-        except Exception:
-            time.sleep(1)
-    return ""
-
-
 def generate_caption_for_url(image_url: str, img_pil: Image.Image):
     if not anthropic_key:
-        update_caption(image_url, FALLBACK_CAPTION)
+        update_caption(image_url, "Zuzia 18 🎉")
         return
-    start = time.time()
-    image_bytes_ai = compress_for_ai(img_pil)
-    image_b64 = base64.standard_b64encode(image_bytes_ai).decode("utf-8")
-    angle = get_next_angle()
-    prompt = get_prompt(angle)
+
+    # Identycznie jak w działającym kodzie
+    buf = BytesIO()
+    img_copy = img_pil.copy()
+    img_copy.thumbnail((1024, 1024), Image.LANCZOS)
+    img_copy.save(buf, format="JPEG", quality=80)
+    image_b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
+
+    prompt = get_prompt()
+
     for attempt in range(3):
-        if time.time() - start > AI_TIMEOUT_SEC:
-            break
         try:
             client = anthropic.Anthropic(api_key=anthropic_key)
             message = client.messages.create(
-                model="claude-haiku-4-5",
-                max_tokens=150,
+                model="claude-sonnet-4-6",
+                max_tokens=200,
                 messages=[
                     {
                         "role": "user",
@@ -272,7 +238,10 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
                                     "data": image_b64,
                                 },
                             },
-                            {"type": "text", "text": prompt},
+                            {
+                                "type": "text",
+                                "text": prompt,
+                            },
                         ],
                     }
                 ],
@@ -282,16 +251,10 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
             if len(text) > 3:
                 update_caption(image_url, text)
                 return
-        except Exception as e:
-            import traceback
-            # Zapisz blad do pliku zeby mozna bylo zobaczyc
-            try:
-                with open("ai_error.txt", "w") as ef:
-                    ef.write(f"Attempt {attempt}: {str(e)}\n{traceback.format_exc()}")
-            except:
-                pass
+        except Exception:
             time.sleep(2)
-    update_caption(image_url, FALLBACK_CAPTION)
+
+    update_caption(image_url, "Zuzia 18 🎉")
 
 
 # ─── Session state ─────────────────────────────────────────────────────────────
@@ -310,7 +273,6 @@ for key, default in [
 
 st.sidebar.title("Panel Sterowania")
 st.sidebar.write("AI:", "OK" if anthropic_key else "BRAK")
-st.sidebar.write("Cloudinary:", "OK" if cloud_name else "BRAK")
 
 view_mode = st.sidebar.radio(
     "Wybierz widok:",
@@ -338,9 +300,6 @@ else:
             with lock:
                 if os.path.exists(DB_FILE):
                     os.remove(DB_FILE)
-            for f in [USED_ANGLES_FILE]:
-                if os.path.exists(f):
-                    os.remove(f)
             if cloud_name and cloudinary_key and cloudinary_secret:
                 try:
                     resources = cloudinary.api.resources(
@@ -369,62 +328,64 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
     st.header("Wrzuc fotki na zywo na ekran projektora!")
     st.info(f"📸 Wrzucaj maksymalnie {MAX_PHOTOS} zdjec na raz — jak sie wyswietla, mozesz wrzucic kolejne!")
 
-    uploaded_files = st.file_uploader(
-        f"Wybierz maksymalnie {MAX_PHOTOS} zdjec z telefonu:",
-        type=["jpg", "jpeg", "png", "heic"],
-        accept_multiple_files=True,
-        key=f"uploader_{st.session_state.uploader_key}",
-    )
+    if not cloud_name or not anthropic_key:
+        st.error("Brak skonfigurowanych kluczy w Streamlit Secrets!")
+    else:
+        uploaded_files = st.file_uploader(
+            f"Wybierz maksymalnie {MAX_PHOTOS} zdjec z telefonu:",
+            type=["jpg", "jpeg", "png", "heic"],
+            accept_multiple_files=True,
+            key=f"uploader_{st.session_state.uploader_key}",
+        )
 
-    if uploaded_files:
-        if len(uploaded_files) > MAX_PHOTOS:
-            st.error(f"Wybrales {len(uploaded_files)} zdjec — za duzo! Odznacz kilka, mozna max {MAX_PHOTOS} na raz.")
-            uploaded_files = None
-        else:
+        if uploaded_files and len(uploaded_files) > MAX_PHOTOS:
+            st.warning(f"Za duzo zdjec! Mozna max {MAX_PHOTOS} na raz.")
+            uploaded_files = uploaded_files[:MAX_PHOTOS]
+
+        if uploaded_files:
             st.write(f"Wybrano: {len(uploaded_files)} z {MAX_PHOTOS} zdjec")
+            if st.button("Wyslij zdjecia do pokazu 🚀", key="btn_wyslij"):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                total_files = len(uploaded_files)
+                success_count = 0
 
-    if uploaded_files:
-        if st.button("Wyslij zdjecia do pokazu 🚀", key="btn_wyslij"):
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            total_files = len(uploaded_files)
-            success_count = 0
+                for i, uploaded_file in enumerate(uploaded_files):
+                    status_text.text(f"Wgrywam zdjecie {i + 1} z {total_files}...")
+                    try:
+                        image_bytes = uploaded_file.getvalue()
+                        img = prepare_image(image_bytes)
+                        upload_buf = compress_for_projector(img)
+                        upload_buf.seek(0)
 
-            for i, uploaded_file in enumerate(uploaded_files):
-                status_text.text(f"Wgrywam zdjecie {i + 1} z {total_files}...")
-                try:
-                    image_bytes = uploaded_file.getvalue()
-                    img = prepare_image(image_bytes)
-                    upload_buf = compress_for_projector(img)
-                    image_url = upload_to_cloudinary(upload_buf)
+                        upload_result = cloudinary.uploader.upload(
+                            upload_buf, folder=CLOUDINARY_FOLDER
+                        )
+                        image_url = upload_result.get("secure_url")
 
-                    if not image_url:
-                        st.warning(f"Zdjecie {i + 1}: blad wgrywania, pomijam.")
-                        progress_bar.progress((i + 1) / total_files)
-                        continue
+                        if not image_url:
+                            st.warning(f"Zdjecie {i + 1}: blad wgrywania.")
+                            progress_bar.progress((i + 1) / total_files)
+                            continue
 
-                    save_item(image_url, PLACEHOLDER_CAPTION)
-                    t = threading.Thread(
-                        target=generate_caption_for_url,
-                        args=(image_url, img.copy()),
-                        daemon=True
-                    )
-                    t.start()
-                    success_count += 1
+                        save_item(image_url, PLACEHOLDER_CAPTION)
 
-                except Exception as e:
-                    st.warning(f"Zdjecie {i + 1}: blad — {e}")
+                        AI_EXECUTOR.submit(
+                            generate_caption_for_url,
+                            image_url,
+                            img.copy()
+                        )
+                        success_count += 1
 
-                progress_bar.progress((i + 1) / total_files)
+                    except Exception as e:
+                        st.error(f"Blad przy zdjeciu {i + 1}: {e}")
 
-            if success_count > 0:
-                status_text.text(f"✅ Gotowe! {success_count} zdjec trafiło na ekran projektora!")
-            else:
-                status_text.text("❌ Nie udalo sie wgrac zadnego zdjecia. Sprobuj ponownie.")
+                    progress_bar.progress((i + 1) / total_files)
 
-            time.sleep(2)
-            st.session_state.uploader_key += 1
-            st.rerun()
+                status_text.text(f"✅ Gotowe! {success_count} zdjec trafiło na ekran!")
+                time.sleep(1)
+                st.session_state.uploader_key += 1
+                st.rerun()
 
 # ─── Widok: Projektor (DJ) ────────────────────────────────────────────────────
 
