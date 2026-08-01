@@ -3,7 +3,7 @@ import time
 import base64
 import random
 from io import BytesIO
-from concurrent.futures import ThreadPoolExecutor
+import threading
 
 from PIL import Image, ExifTags, ImageOps
 try:
@@ -46,7 +46,6 @@ MAX_CAPTION_LEN = 150
 AI_TIMEOUT_SEC = 55
 DEFAULT_SLIDE_DELAY = 7
 
-AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 ALL_ANGLES = [
     "sytuacyjny — zareaguj na konkretną sytuację ze zdjęcia jednym celnym zdaniem",
@@ -405,11 +404,12 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
                         continue
 
                     save_item(image_url, PLACEHOLDER_CAPTION)
-                    AI_EXECUTOR.submit(
-                        generate_caption_for_url,
-                        image_url,
-                        img.copy()
+                    t = threading.Thread(
+                        target=generate_caption_for_url,
+                        args=(image_url, img.copy()),
+                        daemon=True
                     )
+                    t.start()
                     success_count += 1
 
                 except Exception as e:
@@ -480,4 +480,3 @@ else:
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc cos ze swojego telefonu.")
-        
