@@ -328,64 +328,61 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
     st.header("Wrzuc fotki na zywo na ekran projektora!")
     st.info(f"📸 Wrzucaj maksymalnie {MAX_PHOTOS} zdjec na raz — jak sie wyswietla, mozesz wrzucic kolejne!")
 
-    if not cloud_name or not anthropic_key:
-        st.error("Brak skonfigurowanych kluczy w Streamlit Secrets!")
-    else:
-        uploaded_files = st.file_uploader(
-            f"Wybierz maksymalnie {MAX_PHOTOS} zdjec z telefonu:",
-            type=["jpg", "jpeg", "png", "heic"],
-            accept_multiple_files=True,
-            key=f"uploader_{st.session_state.uploader_key}",
-        )
+    uploaded_files = st.file_uploader(
+        f"Wybierz maksymalnie {MAX_PHOTOS} zdjec z telefonu:",
+        type=["jpg", "jpeg", "png", "heic"],
+        accept_multiple_files=True,
+        key=f"uploader_{st.session_state.uploader_key}",
+    )
 
-        if uploaded_files and len(uploaded_files) > MAX_PHOTOS:
-            st.warning(f"Za duzo zdjec! Mozna max {MAX_PHOTOS} na raz.")
-            uploaded_files = uploaded_files[:MAX_PHOTOS]
+    if uploaded_files and len(uploaded_files) > MAX_PHOTOS:
+        st.warning(f"Za duzo zdjec! Mozna max {MAX_PHOTOS} na raz.")
+        uploaded_files = uploaded_files[:MAX_PHOTOS]
 
-        if uploaded_files:
-            st.write(f"Wybrano: {len(uploaded_files)} z {MAX_PHOTOS} zdjec")
-            if st.button("Wyslij zdjecia do pokazu 🚀", key="btn_wyslij"):
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                total_files = len(uploaded_files)
-                success_count = 0
+    if uploaded_files:
+        st.write(f"Wybrano: {len(uploaded_files)} z {MAX_PHOTOS} zdjec")
+        if st.button("Wyslij zdjecia do pokazu 🚀", key="btn_wyslij"):
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            total_files = len(uploaded_files)
+            success_count = 0
 
-                for i, uploaded_file in enumerate(uploaded_files):
-                    status_text.text(f"Wgrywam zdjecie {i + 1} z {total_files}...")
-                    try:
-                        image_bytes = uploaded_file.getvalue()
-                        img = prepare_image(image_bytes)
-                        upload_buf = compress_for_projector(img)
-                        upload_buf.seek(0)
+            for i, uploaded_file in enumerate(uploaded_files):
+                status_text.text(f"Wgrywam zdjecie {i + 1} z {total_files}...")
+                try:
+                    image_bytes = uploaded_file.getvalue()
+                    img = prepare_image(image_bytes)
+                    upload_buf = compress_for_projector(img)
+                    upload_buf.seek(0)
 
-                        upload_result = cloudinary.uploader.upload(
-                            upload_buf, folder=CLOUDINARY_FOLDER
-                        )
-                        image_url = upload_result.get("secure_url")
+                    upload_result = cloudinary.uploader.upload(
+                        upload_buf, folder=CLOUDINARY_FOLDER
+                    )
+                    image_url = upload_result.get("secure_url")
 
-                        if not image_url:
-                            st.warning(f"Zdjecie {i + 1}: blad wgrywania.")
-                            progress_bar.progress((i + 1) / total_files)
-                            continue
+                    if not image_url:
+                        st.warning(f"Zdjecie {i + 1}: blad wgrywania.")
+                        progress_bar.progress((i + 1) / total_files)
+                        continue
 
-                        save_item(image_url, PLACEHOLDER_CAPTION)
+                    save_item(image_url, PLACEHOLDER_CAPTION)
 
-                        AI_EXECUTOR.submit(
-                            generate_caption_for_url,
-                            image_url,
-                            img.copy()
-                        )
-                        success_count += 1
+                    AI_EXECUTOR.submit(
+                        generate_caption_for_url,
+                        image_url,
+                        img.copy()
+                    )
+                    success_count += 1
 
-                    except Exception as e:
-                        st.error(f"Blad przy zdjeciu {i + 1}: {e}")
+                except Exception as e:
+                    st.error(f"Blad przy zdjeciu {i + 1}: {e}")
 
-                    progress_bar.progress((i + 1) / total_files)
+                progress_bar.progress((i + 1) / total_files)
 
-                status_text.text(f"✅ Gotowe! {success_count} zdjec trafiło na ekran!")
-                time.sleep(1)
-                st.session_state.uploader_key += 1
-                st.rerun()
+            status_text.text(f"✅ Gotowe! {success_count} zdjec trafiło na ekran!")
+            time.sleep(1)
+            st.session_state.uploader_key += 1
+            st.rerun()
 
 # ─── Widok: Projektor (DJ) ────────────────────────────────────────────────────
 
