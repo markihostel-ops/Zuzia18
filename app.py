@@ -67,7 +67,6 @@ ALL_ANGLES = [
     "jak prawnik sporządzający oficjalne oświadczenie o zabawie",
     "jak astronom obserwujący energię widoczną z kosmosu",
     "jak reżyser wołający cięcie bo scena była zbyt dobra",
-    "jak archiwista opisujący dokument o znaczeniu historycznym",
     "jak kucharz opisujący przepis na tę chwilę",
     "jak mechanik oceniający silnik imprezy na pełnych obrotach",
     "jak opis z aukcji dzieł sztuki — unikat, cena bezcenna",
@@ -79,6 +78,7 @@ ALL_ANGLES = [
     "jak komentator sportowy relacjonujący decydujący moment",
     "jak narrator bajki — i żyli długo i tańczyli szczęśliwie",
     "jak opis ze słownika — definicja słowa impreza to właśnie to",
+    "jak archiwista opisujący dokument o znaczeniu historycznym",
 ]
 
 
@@ -288,18 +288,34 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
     update_caption(image_url, FALLBACK_CAPTION)
 
 
+# ─── Session state ─────────────────────────────────────────────────────────────
+
+for key, default in [
+    ("current_index", 0),
+    ("last_slide_time", time.time()),
+    ("uploader_key", 0),
+    ("last_known_count", 0),
+    ("confirm_clear", False),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
+
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 st.sidebar.title("Panel Sterowania")
+
 view_mode = st.sidebar.radio(
     "Wybierz widok:",
     ("Wgraj Zdjecie (Goscie)", "Pokaz na Zywo (DJ)"),
     key="view_mode_radio"
 )
-st.sidebar.markdown("---")
 
-if "confirm_clear" not in st.session_state:
-    st.session_state.confirm_clear = False
+st.sidebar.markdown("---")
+st.sidebar.subheader("Ustawienia Pokazu")
+auto_play = st.sidebar.checkbox("Automatyczna zmiana slajdow", value=True, key="auto_play")
+slide_delay_sec = st.sidebar.slider("Czas wyswietlania (sekundy)", 3, 15, DEFAULT_SLIDE_DELAY, key="slide_delay")
+
+st.sidebar.markdown("---")
 
 if not st.session_state.confirm_clear:
     if st.sidebar.button("Wyczysc cala galerie", key="btn_wyczysc"):
@@ -337,15 +353,6 @@ else:
     if col_no.button("NIE, anuluj", key="btn_no"):
         st.session_state.confirm_clear = False
         st.rerun()
-
-for key, default in [
-    ("current_index", 0),
-    ("last_slide_time", time.time()),
-    ("uploader_key", 0),
-    ("last_known_count", 0),
-]:
-    if key not in st.session_state:
-        st.session_state[key] = default
 
 # ─── Widok: Wgrywanie zdjec ───────────────────────────────────────────────────
 
@@ -415,27 +422,9 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
 else:
     st_autorefresh(interval=3000, key="dj_autorefresh")
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Ustawienia Pokazu")
-    auto_play = st.sidebar.checkbox("Automatyczna zmiana slajdow", value=True, key="auto_play")
-    slide_delay_sec = st.sidebar.slider("Czas wyswietlania (sekundy)", 3, 15, DEFAULT_SLIDE_DELAY, key="slide_delay")
-
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Zarzadzanie zdjeciami")
     items = load_gallery()
-
-    if items:
-        for idx2, it in enumerate(items):
-            col_txt, col_btn = st.sidebar.columns([3, 1])
-            col_txt.text(f"#{idx2 + 1}: {it['caption'][:20]}...")
-            if col_btn.button("Skasuj", key=f"del_{idx2}"):
-                items.pop(idx2)
-                save_full_gallery(items)
-                st.session_state.current_index = 0
-                st.session_state.last_known_count = len(items)
-                st.rerun()
-
     current_count = len(items)
+
     if current_count > st.session_state.last_known_count:
         st.session_state.current_index = 0
         st.session_state.last_known_count = current_count
@@ -460,17 +449,16 @@ else:
         st.markdown(f"""
         <link rel="prefetch" href="{next_url}">
         <style>
-        .block-container {{padding: 0 !important; max-width: 100% !important;}}
-        .stApp > header {{display: none;}}
+        .block-container {{padding-top: 1rem !important;}}
         </style>
         <div style="display:flex;align-items:center;justify-content:center;
-                    height:95vh;background:#000;overflow:hidden;">
+                    height:85vh;background:#000;border-radius:12px;overflow:hidden;">
             <img src="{display_url}"
-                 style="height:95vh;max-width:78vw;object-fit:contain;flex-shrink:0;">
-            <div style="flex:1;padding:3vw;min-width:15vw;max-width:22vw;">
-                <p style="font-size:3.2vw;font-weight:bold;color:#fff;
-                          line-height:1.4;margin:0 0 3vh 0;">{caption_html}</p>
-                <p style="font-size:1.2vw;color:#444;margin:0;">{idx+1} / {len(items)}</p>
+                 style="height:85vh;max-width:75vw;object-fit:contain;flex-shrink:0;">
+            <div style="flex:1;padding:2vw 3vw;min-width:15vw;max-width:25vw;">
+                <p style="font-size:2.8vw;font-weight:bold;color:#fff;
+                          line-height:1.4;margin:0 0 2vh 0;">{caption_html}</p>
+                <p style="font-size:1vw;color:#555;margin:0;">{idx+1} / {len(items)}</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -482,7 +470,4 @@ else:
                 st.session_state.last_slide_time = now
                 st.rerun()
     else:
-        st.markdown(
-            "<h2 style='text-align:center;margin-top:40vh;color:#fff;'>Czekamy na pierwsze zdjecia! 📸</h2>",
-            unsafe_allow_html=True,
-        )
+        st.info("Czekamy na pierwsze zdjecia! Wrzuc cos ze swojego telefonu.")
