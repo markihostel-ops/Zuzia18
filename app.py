@@ -49,7 +49,7 @@ DEFAULT_SLIDE_DELAY = 7
 AI_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 ALL_ANGLES = [
-    "sytuacyjny — zareaguj na konkretną sytuację ze zdjęcia jednym celnym zdaniem jakbyś był świadkiem czegoś niewiarygodnego",
+    "sytuacyjny — zareaguj na konkretną sytuację ze zdjęcia jednym celnym zdaniem",
     "absurdalny — skomentuj zdjęcie w zupełnie nieoczekiwany, bezsensowny ale zabawny sposób",
     "życiowy — powiedz coś mądrego i śmiesznego zarazem o tym co pokazuje zdjęcie",
     "imprezowy — zażartuj o tańcu i zabawie nawiązując do zdjęcia",
@@ -59,14 +59,11 @@ ALL_ANGLES = [
     "jak sędzia sportowy wystawiający oceny za styl i technikę",
     "jak recenzent filmowy opisujący scenę godną Oscara",
     "jak prognoza pogody — ale dla nastroju na zdjęciu",
-    "jak opis z katalogu IKEA dla przedmiotu o nazwie ZABAWA",
     "jak geolog opisujący trzęsienie ziemi na parkiecie",
-    "jak instrukcja obsługi urządzenia pracującego na pełnych obrotach",
     "jak sommelier oceniający rocznik tej imprezy",
     "jak komentarz z przyszłości — za 20 lat ktoś ogląda to zdjęcie",
     "jak dietetyk liczący kalorie spalone na parkiecie",
     "jak trener fitness oceniający technikę tańca",
-    "jak przewodnik turystyczny opisujący obowiązkową atrakcję",
     "jak prawnik sporządzający oficjalne oświadczenie o zabawie",
     "jak astronom obserwujący energię widoczną z kosmosu",
     "jak reżyser wołający cięcie bo scena była zbyt dobra",
@@ -79,6 +76,9 @@ ALL_ANGLES = [
     "jak fotograf który właśnie złapał najlepszy kadr w karierze",
     "jak opis z menu restauracji — danie dnia to czysta radość",
     "jak architekt oceniający solidność konstrukcji tej imprezy",
+    "jak komentator sportowy relacjonujący decydujący moment",
+    "jak narrator bajki — i żyli długo i tańczyli szczęśliwie",
+    "jak opis ze słownika — definicja słowa impreza to właśnie to",
 ]
 
 
@@ -235,9 +235,7 @@ def upload_to_cloudinary(upload_buf: BytesIO) -> str:
     for attempt in range(3):
         try:
             upload_buf.seek(0)
-            result = cloudinary.uploader.upload(
-                upload_buf, folder=CLOUDINARY_FOLDER
-            )
+            result = cloudinary.uploader.upload(upload_buf, folder=CLOUDINARY_FOLDER)
             url = result.get("secure_url", "")
             if url:
                 return url
@@ -415,19 +413,29 @@ if view_mode == "Wgraj Zdjecie (Goscie)":
 # ─── Widok: Projektor (DJ) ────────────────────────────────────────────────────
 
 else:
-    st.markdown("""
-        <style>
-        [data-testid="stSidebar"] {display: none;}
-        .stApp > header {display: none;}
-        .block-container {padding: 0 !important; max-width: 100% !important;}
-        </style>
-    """, unsafe_allow_html=True)
-
     st_autorefresh(interval=3000, key="dj_autorefresh")
 
-    items = load_gallery()
-    current_count = len(items)
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Ustawienia Pokazu")
+    auto_play = st.sidebar.checkbox("Automatyczna zmiana slajdow", value=True, key="auto_play")
+    slide_delay_sec = st.sidebar.slider("Czas wyswietlania (sekundy)", 3, 15, DEFAULT_SLIDE_DELAY, key="slide_delay")
 
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Zarzadzanie zdjeciami")
+    items = load_gallery()
+
+    if items:
+        for idx2, it in enumerate(items):
+            col_txt, col_btn = st.sidebar.columns([3, 1])
+            col_txt.text(f"#{idx2 + 1}: {it['caption'][:20]}...")
+            if col_btn.button("Skasuj", key=f"del_{idx2}"):
+                items.pop(idx2)
+                save_full_gallery(items)
+                st.session_state.current_index = 0
+                st.session_state.last_known_count = len(items)
+                st.rerun()
+
+    current_count = len(items)
     if current_count > st.session_state.last_known_count:
         st.session_state.current_index = 0
         st.session_state.last_known_count = current_count
@@ -451,10 +459,14 @@ else:
 
         st.markdown(f"""
         <link rel="prefetch" href="{next_url}">
+        <style>
+        .block-container {{padding: 0 !important; max-width: 100% !important;}}
+        .stApp > header {{display: none;}}
+        </style>
         <div style="display:flex;align-items:center;justify-content:center;
-                    height:100vh;background:#000;overflow:hidden;">
+                    height:95vh;background:#000;overflow:hidden;">
             <img src="{display_url}"
-                 style="height:100vh;max-width:80vw;object-fit:contain;flex-shrink:0;">
+                 style="height:95vh;max-width:78vw;object-fit:contain;flex-shrink:0;">
             <div style="flex:1;padding:3vw;min-width:15vw;max-width:22vw;">
                 <p style="font-size:3.2vw;font-weight:bold;color:#fff;
                           line-height:1.4;margin:0 0 3vh 0;">{caption_html}</p>
@@ -463,11 +475,12 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        now = time.time()
-        if len(items) > 1 and now - st.session_state.last_slide_time >= DEFAULT_SLIDE_DELAY:
-            st.session_state.current_index = (idx + 1) % len(items)
-            st.session_state.last_slide_time = now
-            st.rerun()
+        if auto_play and len(items) > 1:
+            now = time.time()
+            if now - st.session_state.last_slide_time >= slide_delay_sec:
+                st.session_state.current_index = (idx + 1) % len(items)
+                st.session_state.last_slide_time = now
+                st.rerun()
     else:
         st.markdown(
             "<h2 style='text-align:center;margin-top:40vh;color:#fff;'>Czekamy na pierwsze zdjecia! 📸</h2>",
