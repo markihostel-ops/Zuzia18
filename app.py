@@ -259,7 +259,7 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
         try:
             client = anthropic.Anthropic(api_key=anthropic_key)
             message = client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model="claude-haiku-4-5",
                 max_tokens=150,
                 messages=[
                     {
@@ -283,7 +283,14 @@ def generate_caption_for_url(image_url: str, img_pil: Image.Image):
             if len(text) > 3:
                 update_caption(image_url, text)
                 return
-        except Exception:
+        except Exception as e:
+            import traceback
+            # Zapisz blad do pliku zeby mozna bylo zobaczyc
+            try:
+                with open("ai_error.txt", "w") as ef:
+                    ef.write(f"Attempt {attempt}: {str(e)}\n{traceback.format_exc()}")
+            except:
+                pass
             time.sleep(2)
     update_caption(image_url, FALLBACK_CAPTION)
 
@@ -473,3 +480,4 @@ else:
                 st.rerun()
     else:
         st.info("Czekamy na pierwsze zdjecia! Wrzuc cos ze swojego telefonu.")
+        
